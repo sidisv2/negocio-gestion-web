@@ -1,18 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { INITIAL_PRODUCTS } from '@/lib/mockData';
+import { useState, useEffect } from 'react';
 import { Product } from '@/lib/supabase';
-import { Plus, Search, AlertTriangle, Edit3, Trash2, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function InventarioPage() {
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todas');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Form State
-  const [newProduct, setNewProduct] = useState<Omit<Product, 'id'>>({
+  const [newProduct, setNewProduct] = useState({
     barcode: '',
     name: '',
     category: 'Accesorios',
@@ -22,32 +22,55 @@ export default function InventarioPage() {
     min_stock: 5,
   });
 
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
-    const matchesCat = categoryFilter === 'Todas' || p.category === categoryFilter;
-    return matchesSearch && matchesCat;
-  });
+  const fetchInventory = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/inventory?category=${categoryFilter}&search=${search}`);
+      const data = await res.json();
+      if (data.products) {
+        setProducts(data.products);
+      }
+    } catch (err) {
+      console.error('Error cargando inventario:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchInventory();
+  }, [categoryFilter, search]);
+
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProduct.name || !newProduct.price) return;
+    if (!newProduct.name || !newProduct.price || submitting) return;
 
-    const created: Product = {
-      ...newProduct,
-      id: Date.now().toString(),
-    };
+    try {
+      setSubmitting(true);
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct),
+      });
 
-    setProducts([created, ...products]);
-    setShowAddModal(false);
-    setNewProduct({
-      barcode: '',
-      name: '',
-      category: 'Accesorios',
-      cost: 0,
-      price: 0,
-      stock: 0,
-      min_stock: 5,
-    });
+      if (res.ok) {
+        setShowAddModal(false);
+        setNewProduct({
+          barcode: '',
+          name: '',
+          category: 'Accesorios',
+          cost: 0,
+          price: 0,
+          stock: 0,
+          min_stock: 5,
+        });
+        fetchInventory();
+      }
+    } catch (err) {
+      console.error('Error creando producto:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -94,51 +117,57 @@ export default function InventarioPage() {
 
       {/* Inventory Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-800/80 text-slate-400 uppercase text-[11px] tracking-wider border-b border-slate-800">
-              <tr>
-                <th className="py-4 px-5">Código</th>
-                <th className="py-4 px-5">Producto</th>
-                <th className="py-4 px-5">Categoría</th>
-                <th className="py-4 px-5">Costo</th>
-                <th className="py-4 px-5">Precio</th>
-                <th className="py-4 px-5 text-center">Stock</th>
-                <th className="py-4 px-5 text-center">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {filteredProducts.map((p) => {
-                const isLowStock = p.stock <= p.min_stock;
-                return (
-                  <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-4 px-5 font-mono text-slate-400 text-xs">{p.barcode || 'S/N'}</td>
-                    <td className="py-4 px-5 font-semibold text-white">{p.name}</td>
-                    <td className="py-4 px-5">
-                      <span className="bg-slate-800 text-indigo-300 px-3 py-1 rounded-full text-xs font-medium border border-indigo-500/20">
-                        {p.category}
-                      </span>
-                    </td>
-                    <td className="py-4 px-5 text-slate-400">${p.cost.toLocaleString('es-AR')}</td>
-                    <td className="py-4 px-5 font-bold text-emerald-400">${p.price.toLocaleString('es-AR')}</td>
-                    <td className="py-4 px-5 text-center font-bold text-white">{p.stock} u.</td>
-                    <td className="py-4 px-5 text-center">
-                      {isLowStock ? (
-                        <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-3 py-1 rounded-full text-xs font-semibold">
-                          <AlertTriangle className="w-3.5 h-3.5" /> Reponer
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-800/80 text-slate-400 uppercase text-[11px] tracking-wider border-b border-slate-800">
+                <tr>
+                  <th className="py-4 px-5">Código</th>
+                  <th className="py-4 px-5">Producto</th>
+                  <th className="py-4 px-5">Categoría</th>
+                  <th className="py-4 px-5">Costo</th>
+                  <th className="py-4 px-5">Precio</th>
+                  <th className="py-4 px-5 text-center">Stock</th>
+                  <th className="py-4 px-5 text-center">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {products.map((p) => {
+                  const isLowStock = p.stock <= p.min_stock;
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-4 px-5 font-mono text-slate-400 text-xs">{p.barcode || 'S/N'}</td>
+                      <td className="py-4 px-5 font-semibold text-white">{p.name}</td>
+                      <td className="py-4 px-5">
+                        <span className="bg-slate-800 text-indigo-300 px-3 py-1 rounded-full text-xs font-medium border border-indigo-500/20">
+                          {p.category}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-semibold">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> OK
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td className="py-4 px-5 text-slate-400">${p.cost.toLocaleString('es-AR')}</td>
+                      <td className="py-4 px-5 font-bold text-emerald-400">${p.price.toLocaleString('es-AR')}</td>
+                      <td className="py-4 px-5 text-center font-bold text-white">{p.stock} u.</td>
+                      <td className="py-4 px-5 text-center">
+                        {isLowStock ? (
+                          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/30 px-3 py-1 rounded-full text-xs font-semibold">
+                            <AlertTriangle className="w-3.5 h-3.5" /> Reponer
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-semibold">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> OK
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Add Modal */}
@@ -226,9 +255,11 @@ export default function InventarioPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/30"
+                  disabled={submitting}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
                 >
-                  Guardar
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {submitting ? 'Guardando...' : 'Guardar'}
                 </button>
               </div>
             </form>

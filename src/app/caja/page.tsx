@@ -1,38 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Expense } from '@/lib/supabase';
-import { Wallet, Plus, ArrowDownCircle, ArrowUpCircle, Calendar, Tag } from 'lucide-react';
-
-const INITIAL_EXPENSES: Expense[] = [
-  { id: '1', description: 'Pago Proveedor Golosinas (Arcor)', amount: 18500, category: 'Proveedor', created_at: '2026-08-20T10:15:00' },
-  { id: '2', description: 'Factura Luz & Internet Local', amount: 9200, category: 'Servicios', created_at: '2026-08-19T16:30:00' },
-  { id: '3', description: 'Retiro de Caja Personal', amount: 15000, category: 'Retiro de Caja', created_at: '2026-08-18T19:00:00' },
-];
+import { Wallet, Plus, ArrowDownCircle, Calendar, Loader2 } from 'lucide-react';
 
 export default function CajaPage() {
-  const [expenses, setExpenses] = useState<Expense[]>(INITIAL_EXPENSES);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<Expense['category']>('Gasto General');
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const fetchExpenses = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/expenses');
+      const data = await res.json();
+      if (data.expenses) {
+        setExpenses(data.expenses);
+      }
+    } catch (err) {
+      console.error('Error cargando gastos:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleAddExpense = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchExpenses();
+  }, []);
+
+  const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description || !amount) return;
+    if (!description || !amount || submitting) return;
 
-    const newExp: Expense = {
-      id: Date.now().toString(),
-      description,
-      amount: Number(amount),
-      category,
-      created_at: new Date().toISOString(),
-    };
+    try {
+      setSubmitting(true);
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, amount: Number(amount), category }),
+      });
 
-    setExpenses([newExp, ...expenses]);
-    setDescription('');
-    setAmount('');
+      if (res.ok) {
+        setDescription('');
+        setAmount('');
+        fetchExpenses();
+      }
+    } catch (err) {
+      console.error('Error registrando gasto:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -93,9 +116,11 @@ export default function CajaPage() {
 
             <button
               type="submit"
-              className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-amber-600/30 transition-all text-base mt-2"
+              disabled={submitting}
+              className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-amber-600/30 transition-all text-base mt-2 flex items-center justify-center gap-2"
             >
-              Registrar Egreo en Caja
+              {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
+              {submitting ? 'Guardando Gasto...' : 'Registrar Egreso en Caja'}
             </button>
           </form>
         </div>
@@ -115,28 +140,34 @@ export default function CajaPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
             <h3 className="font-bold text-white text-lg">Historial de Salidas</h3>
 
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-              {expenses.map((exp) => (
-                <div key={exp.id} className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-                  <div className="space-y-1">
-                    <h4 className="font-semibold text-white text-sm">{exp.description}</h4>
-                    <div className="flex items-center gap-3 text-xs text-slate-400">
-                      <span className="bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-md font-medium border border-amber-500/20">
-                        {exp.category}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {new Date(exp.created_at).toLocaleDateString('es-AR')}
-                      </span>
+            {loading ? (
+              <div className="flex justify-center py-12 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {expenses.map((exp) => (
+                  <div key={exp.id} className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
+                    <div className="space-y-1">
+                      <h4 className="font-semibold text-white text-sm">{exp.description}</h4>
+                      <div className="flex items-center gap-3 text-xs text-slate-400">
+                        <span className="bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-md font-medium border border-amber-500/20">
+                          {exp.category}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {new Date(exp.created_at).toLocaleDateString('es-AR')}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <span className="font-extrabold text-amber-400 text-lg">
-                    -${exp.amount.toLocaleString('es-AR')}
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <span className="font-extrabold text-amber-400 text-lg">
+                      -${Number(exp.amount).toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

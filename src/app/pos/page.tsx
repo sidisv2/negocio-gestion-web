@@ -1,23 +1,37 @@
 'use client';
 
-import { useState } from 'react';
-import { INITIAL_PRODUCTS } from '@/lib/mockData';
+import { useState, useEffect } from 'react';
 import { Product } from '@/lib/supabase';
-import { Search, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, CreditCard, Banknote, QrCode } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, Trash2, CheckCircle2, CreditCard, Banknote, QrCode, Loader2 } from 'lucide-react';
 
 export default function POSPage() {
-  const [products] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [cart, setCart] = useState<{ product: Product; quantity: number }[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'MercadoPago' | 'Tarjeta'>('Efectivo');
+  const [submitting, setSubmitting] = useState(false);
   const [saleCompleted, setSaleCompleted] = useState(false);
 
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
-    const matchesCategory = selectedCategory === 'Todas' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const fetchInventory = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/inventory?category=${selectedCategory}&search=${search}`);
+      const data = await res.json();
+      if (data.products) {
+        setProducts(data.products);
+      }
+    } catch (err) {
+      console.error('Error cargando inventario:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInventory();
+  }, [selectedCategory, search]);
 
   const addToCart = (product: Product) => {
     setCart((prev) => {
@@ -51,13 +65,37 @@ export default function POSPage() {
 
   const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
-  const handleCheckout = () => {
-    if (cart.length === 0) return;
-    setSaleCompleted(true);
-    setTimeout(() => {
-      setCart([]);
-      setSaleCompleted(false);
-    }, 2500);
+  const handleCheckout = async () => {
+    if (cart.length === 0 || submitting) return;
+
+    try {
+      setSubmitting(true);
+      const salePayload = {
+        payment_method: paymentMethod,
+        items: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+        })),
+      };
+
+      const res = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(salePayload),
+      });
+
+      if (res.ok) {
+        setSaleCompleted(true);
+        setCart([]);
+        fetchInventory(); // Reload updated stock
+        setTimeout(() => setSaleCompleted(false), 3000);
+      }
+    } catch (err) {
+      console.error('Error registrando venta:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -100,29 +138,35 @@ export default function POSPage() {
         </div>
 
         {/* Product Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto pr-1">
-          {filteredProducts.map((product) => (
-            <button
-              key={product.id}
-              onClick={() => addToCart(product)}
-              className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 p-4 rounded-2xl text-left transition-all hover:scale-[1.02] flex flex-col justify-between group shadow-sm"
-            >
-              <div>
-                <span className="text-[11px] font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">
-                  {product.category}
-                </span>
-                <h3 className="font-semibold text-white mt-2 text-sm line-clamp-2 group-hover:text-indigo-300">
-                  {product.name}
-                </h3>
-              </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto pr-1">
+            {products.map((product) => (
+              <button
+                key={product.id}
+                onClick={() => addToCart(product)}
+                className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 p-4 rounded-2xl text-left transition-all hover:scale-[1.02] flex flex-col justify-between group shadow-sm"
+              >
+                <div>
+                  <span className="text-[11px] font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">
+                    {product.category}
+                  </span>
+                  <h3 className="font-semibold text-white mt-2 text-sm line-clamp-2 group-hover:text-indigo-300">
+                    {product.name}
+                  </h3>
+                </div>
 
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-lg font-bold text-emerald-400">${product.price.toLocaleString('es-AR')}</span>
-                <span className="text-xs text-slate-400">Stock: {product.stock}</span>
-              </div>
-            </button>
-          ))}
-        </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-lg font-bold text-emerald-400">${product.price.toLocaleString('es-AR')}</span>
+                  <span className="text-xs text-slate-400">Stock: {product.stock}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right side: Shopping Cart & Checkout */}
@@ -225,10 +269,11 @@ export default function POSPage() {
           ) : (
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/25 text-lg transition-all"
+              disabled={cart.length === 0 || submitting}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/25 text-lg transition-all flex items-center justify-center gap-2"
             >
-              COBRAR AHORA
+              {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
+              {submitting ? 'PROCESANDO...' : 'COBRAR AHORA'}
             </button>
           )}
         </div>
