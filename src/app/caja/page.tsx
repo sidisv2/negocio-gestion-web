@@ -74,7 +74,6 @@ export default function CajaPage() {
     fetchInitialData();
   }, []);
 
-  // Update default chip when category changes
   useEffect(() => {
     if (!customDescMode) {
       const chips = CONCEPT_CHIPS[expenseCategory] || CONCEPT_CHIPS.varios;
@@ -82,7 +81,6 @@ export default function CajaPage() {
     }
   }, [expenseCategory, customDescMode]);
 
-  // Autocomplete concept AND Auto-calculate Total Cost for purchase
   useEffect(() => {
     if (expenseCategory === 'mercaderia' && purchaseProductId) {
       const prod = products.find((p) => p.id === purchaseProductId);
@@ -239,7 +237,7 @@ export default function CajaPage() {
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-xl animate-pulse ${
+          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-2xl backdrop-blur-md animate-pulse ${
             toastMessage.type === 'success'
               ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
               : 'bg-rose-500/20 border-rose-500 text-rose-300'
@@ -258,9 +256,9 @@ export default function CajaPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
-          <Wallet className="w-8 h-8 text-indigo-400" /> Registro Unificado de Caja & Stock
+          <Wallet className="w-8 h-8 text-violet-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Operación optimizada para teclado numérico móvil (ARS, $)</p>
+        <p className="text-slate-400 text-sm mt-1">Carga rápida con botones vibrantes y gradientes (ARS, $)</p>
       </div>
 
       {/* Top Giant Action Selector */}
@@ -273,8 +271,8 @@ export default function CajaPage() {
           }}
           className={`p-5 rounded-3xl border text-left transition-all flex flex-col justify-between shadow-xl ${
             activeType === 'ingreso'
-              ? 'bg-emerald-600/20 border-emerald-500 text-white ring-2 ring-emerald-500/50'
-              : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+              ? 'bg-emerald-500/15 border-emerald-500/50 text-white ring-2 ring-emerald-500/40'
+              : 'bg-slate-900/75 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:border-slate-700'
           }`}
         >
           <div className="bg-emerald-500/20 p-3 rounded-2xl text-emerald-400 w-fit mb-2">
@@ -294,8 +292,8 @@ export default function CajaPage() {
           }}
           className={`p-5 rounded-3xl border text-left transition-all flex flex-col justify-between shadow-xl ${
             activeType === 'egreso'
-              ? 'bg-rose-600/20 border-rose-500 text-white ring-2 ring-rose-500/50'
-              : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+              ? 'bg-rose-500/15 border-rose-500/50 text-white ring-2 ring-rose-500/40'
+              : 'bg-slate-900/75 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:border-slate-700'
           }`}
         >
           <div className="bg-rose-500/20 p-3 rounded-2xl text-rose-400 w-fit mb-2">
@@ -310,7 +308,7 @@ export default function CajaPage() {
 
       {/* INGRESO: VENTA RÁPIDA */}
       {activeType === 'ingreso' && (
-        <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
+        <div className="bg-slate-900/75 border border-slate-800/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-emerald-400" /> Registrar Venta (Descuenta Stock)
           </h2>
@@ -330,7 +328,7 @@ export default function CajaPage() {
                   required
                   value={saleProductId}
                   onChange={(e) => setSaleProductId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
                   <option value="">-- Selecciona producto vendido --</option>
                   {products.map((p) => {
@@ -359,7 +357,7 @@ export default function CajaPage() {
                   required
                   value={saleQty}
                   onChange={(e) => setSaleQty(Number(e.target.value))}
-                  className={`w-full bg-slate-800 border rounded-2xl px-4 py-3.5 text-xl font-bold text-white focus:outline-none focus:ring-2 ${
+                  className={`w-full bg-slate-800/90 border rounded-2xl px-4 py-3.5 text-xl font-bold text-white focus:outline-none focus:ring-2 ${
                     isStockInsufficient ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:ring-emerald-500'
                   }`}
                 />
@@ -372,7 +370,7 @@ export default function CajaPage() {
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
                   <option value="Efectivo">Efectivo</option>
                   <option value="MercadoPago">MercadoPago</option>
@@ -391,7 +389,7 @@ export default function CajaPage() {
             <button
               type="submit"
               disabled={submitting || !saleProductId || isStockInsufficient}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 text-lg transition-all flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-500/20 text-lg transition-all flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
               {submitting ? 'Procesando venta...' : 'CONFIRMAR VENTA Y DESCONTAR STOCK'}
@@ -402,7 +400,7 @@ export default function CajaPage() {
 
       {/* EGRESO: COMPRA DE STOCK O GASTO GENERAL */}
       {activeType === 'egreso' && (
-        <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
+        <div className="bg-slate-900/75 border border-slate-800/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <PackagePlus className="w-5 h-5 text-rose-400" /> Registrar Egreso de Caja / Compra
           </h2>
@@ -425,8 +423,8 @@ export default function CajaPage() {
                     onClick={() => setExpenseCategory(item.id as any)}
                     className={`py-3 px-3 rounded-2xl text-xs font-bold transition-all border ${
                       expenseCategory === item.id
-                        ? 'bg-rose-600 text-white border-rose-500 shadow-md scale-[1.02]'
-                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                        ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white border-rose-500 shadow-md scale-[1.02]'
+                        : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
                     }`}
                   >
                     {item.label}
@@ -493,7 +491,7 @@ export default function CajaPage() {
                   required
                   value={expenseDesc}
                   onChange={(e) => setExpenseDesc(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               ) : (
                 <div className="flex flex-wrap gap-2">
@@ -504,8 +502,8 @@ export default function CajaPage() {
                       onClick={() => setExpenseDesc(chip)}
                       className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all border ${
                         expenseDesc === chip
-                          ? 'bg-rose-600 text-white border-rose-500 shadow-md scale-[1.03]'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                          ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white border-rose-500 shadow-md scale-[1.03]'
+                          : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
                       }`}
                     >
                       {chip}
@@ -527,14 +525,14 @@ export default function CajaPage() {
                 required
                 value={expenseAmount}
                 onChange={(e) => setExpenseAmount(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-2xl font-extrabold text-rose-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl px-4 py-3.5 text-2xl font-extrabold text-rose-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
 
             <button
               type="submit"
               disabled={submitting || !expenseDesc || !expenseAmount}
-              className="w-full bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-rose-600/30 text-lg transition-all flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-rose-500/20 text-lg transition-all flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
               {submitting ? 'Guardando egreso...' : 'GUARDAR EGRESO & REPONER STOCK'}
@@ -544,7 +542,7 @@ export default function CajaPage() {
       )}
 
       {/* Unified Movimientos Timeline List */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
+      <div className="bg-slate-900/75 border border-slate-800/80 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
         <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3 flex items-center justify-between">
           <span>Historial de Movimientos de Caja (ARS)</span>
           <span className="text-xs font-medium text-slate-400">Ingresos (+) y Egresos (-)</span>
