@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Product, Expense, supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle, ArrowUpRight, ArrowDownRight, Edit2 } from 'lucide-react';
 
 type UnifiedMovement = {
   id: string;
@@ -11,6 +11,13 @@ type UnifiedMovement = {
   amount: number;
   category: string;
   created_at: string;
+};
+
+const CONCEPT_CHIPS: Record<string, string[]> = {
+  mercaderia: ['📦 Reposición general', '🏷️ Compra a proveedor', '🆕 Lote nuevo', '🚚 Flete de mercadería'],
+  servicios: ['💡 Luz / Electricidad', '📶 Internet / Teléfono', '💧 Agua', '🧾 Impuestos'],
+  alquiler: ['🏠 Alquiler local', '🏢 Expensas'],
+  varios: ['🛍️ Bolsas e insumos', '🧹 Limpieza', '🛠️ Mantenimiento', '☕ Gastos diarios'],
 };
 
 export default function CajaPage() {
@@ -29,7 +36,8 @@ export default function CajaPage() {
 
   // Egreso (Compra de stock o Gastos)
   const [expenseCategory, setExpenseCategory] = useState<'mercaderia' | 'servicios' | 'alquiler' | 'varios'>('mercaderia');
-  const [expenseDesc, setExpenseDesc] = useState('');
+  const [expenseDesc, setExpenseDesc] = useState('📦 Reposición general');
+  const [customDescMode, setCustomDescMode] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState('');
   const [purchaseProductId, setPurchaseProductId] = useState('');
   const [purchaseQty, setPurchaseQty] = useState(1);
@@ -66,12 +74,28 @@ export default function CajaPage() {
     fetchInitialData();
   }, []);
 
-  // Selected product stock calculation for sale validation
+  // Update default chip when category changes
+  useEffect(() => {
+    if (!customDescMode) {
+      const chips = CONCEPT_CHIPS[expenseCategory] || CONCEPT_CHIPS.varios;
+      setExpenseDesc(chips[0]);
+    }
+  }, [expenseCategory, customDescMode]);
+
+  // Autocomplete concept if product is attached to purchase
+  useEffect(() => {
+    if (expenseCategory === 'mercaderia' && purchaseProductId) {
+      const prod = products.find((p) => p.id === purchaseProductId);
+      if (prod) {
+        setExpenseDesc(`Reposición: ${prod.name}`);
+      }
+    }
+  }, [purchaseProductId, expenseCategory, products]);
+
   const selectedSaleProduct = products.find((p) => p.id === saleProductId);
   const availableStock = selectedSaleProduct?.stock ?? 0;
   const isStockInsufficient = Boolean(selectedSaleProduct && saleQty > availableStock);
 
-  // Build unified movements timeline (Sales + Expenses)
   const unifiedMovements: UnifiedMovement[] = [
     ...sales.map((s) => {
       const firstItem = s.sale_items?.[0];
@@ -181,10 +205,10 @@ export default function CajaPage() {
         : '';
 
       setToastMessage({ type: 'success', text: `✅ Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado${stockMsg}` });
-      setExpenseDesc('');
       setExpenseAmount('');
       setPurchaseProductId('');
       setPurchaseQty(1);
+      setCustomDescMode(false);
 
       await fetchInitialData();
     } catch (err: any) {
@@ -231,7 +255,7 @@ export default function CajaPage() {
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
           <Wallet className="w-8 h-8 text-indigo-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Todas las cifras expresadas en Pesos Argentinos (ARS, $)</p>
+        <p className="text-slate-400 text-sm mt-1">Carga rápida sin escritura manual (cifras en ARS, $)</p>
       </div>
 
       {/* Top Giant Action Selector */}
@@ -350,7 +374,6 @@ export default function CajaPage() {
               </div>
             </div>
 
-            {/* Strict Stock Validation Message */}
             {isStockInsufficient && selectedSaleProduct && (
               <div className="bg-rose-500/20 border border-rose-500 text-rose-300 p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -378,6 +401,7 @@ export default function CajaPage() {
           </h2>
 
           <form onSubmit={handleExpenseSubmit} className="space-y-5">
+            {/* Step 1: Category */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                 1. Tipo de Egreso *
@@ -387,7 +411,7 @@ export default function CajaPage() {
                   { id: 'mercaderia', label: '📦 Stock / Mercadería' },
                   { id: 'servicios', label: '💡 Servicios' },
                   { id: 'alquiler', label: '🏠 Alquiler' },
-                  { id: 'varios', label: '📑 Varios' },
+                  { id: 'varios', label: '📄 Varios' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -405,6 +429,7 @@ export default function CajaPage() {
               </div>
             </div>
 
+            {/* Optional Stock Increment Attachment */}
             {expenseCategory === 'mercaderia' && (
               <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 space-y-4">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
@@ -440,20 +465,51 @@ export default function CajaPage() {
               </div>
             )}
 
+            {/* Step 2: Touch Concept Chips (Replaces manual typing) */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                2. Concepto / Detalle *
-              </label>
-              <input
-                type="text"
-                placeholder='Ej. "Reposición fundas proveedor Arcor", "Luz local"'
-                required
-                value={expenseDesc}
-                onChange={(e) => setExpenseDesc(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  2. Motivo del Egreso *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomDescMode(!customDescMode)}
+                  className="text-[11px] font-semibold text-indigo-400 hover:underline flex items-center gap-1"
+                >
+                  <Edit2 className="w-3 h-3" /> {customDescMode ? 'Ver chips rápidos' : '+ Escribir otro motivo'}
+                </button>
+              </div>
+
+              {customDescMode ? (
+                <input
+                  type="text"
+                  placeholder="Escribe el concepto de tu gasto..."
+                  required
+                  value={expenseDesc}
+                  onChange={(e) => setExpenseDesc(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(CONCEPT_CHIPS[expenseCategory] || CONCEPT_CHIPS.varios).map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setExpenseDesc(chip)}
+                      className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all border ${
+                        expenseDesc === chip
+                          ? 'bg-rose-600 text-white border-rose-500 shadow-md scale-[1.03]'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Step 3: Amount */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                 3. Monto Total Pagado ($ ARS) *
