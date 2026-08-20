@@ -15,10 +15,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'El carrito de venta no puede estar vacío.' }, { status: 400 });
     }
 
-    const totalAmount = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
-
     if (isSupabaseConfigured) {
-      // 1. Insert Sales Header with user_id
+      // 1. Strict Stock Validation: Check stock before creating sale
+      for (const item of items) {
+        const { data: prodData, error: prodErr } = await supabaseAdmin
+          .from('products')
+          .select('name, stock')
+          .eq('id', item.product_id)
+          .single();
+
+        if (prodErr || !prodData) {
+          return NextResponse.json({ error: `Producto no encontrado en inventario.` }, { status: 400 });
+        }
+
+        if ((prodData.stock || 0) < item.quantity) {
+          return NextResponse.json(
+            { error: `Stock insuficiente para realizar la venta. Solo dispones de ${prodData.stock} unidades de "${prodData.name}".` },
+            { status: 400 }
+          );
+        }
+      }
+
+      const totalAmount = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+
+      // 2. Insert Sales Header
       const salePayload: any = {
         total_amount: totalAmount,
         payment_method: payment_method || 'Efectivo',
@@ -37,7 +57,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: saleError.message || 'Error al guardar la venta' }, { status: 400 });
       }
 
-      // 2. Insert Sale Items (Triggers database fn_decrement_stock_on_sale or manually update stock)
+      // 3. Insert Sale Items
       const saleItemsToInsert = items.map((item) => ({
         sale_id: saleData.id,
         product_id: item.product_id,
@@ -52,7 +72,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: itemsError.message || 'Error al guardar los items de la venta' }, { status: 400 });
       }
 
-      // 3. Fallback/Explicit Stock Decrement for consistency
+      // 4. Safely Decrement Stock (Never negative)
       for (const item of items) {
         const { data: currentProd } = await supabaseAdmin
           .from('products')
@@ -69,6 +89,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, sale: saleData });
     }
 
+    const totalAmount = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
     return NextResponse.json({
       success: true,
       sale: {

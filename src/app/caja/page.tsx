@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Product, Expense, Sale, supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { Product, Expense, supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 type UnifiedMovement = {
@@ -66,6 +66,11 @@ export default function CajaPage() {
     fetchInitialData();
   }, []);
 
+  // Selected product stock calculation for sale validation
+  const selectedSaleProduct = products.find((p) => p.id === saleProductId);
+  const availableStock = selectedSaleProduct?.stock ?? 0;
+  const isStockInsufficient = Boolean(selectedSaleProduct && saleQty > availableStock);
+
   // Build unified movements timeline (Sales + Expenses)
   const unifiedMovements: UnifiedMovement[] = [
     ...sales.map((s) => {
@@ -96,21 +101,20 @@ export default function CajaPage() {
 
   const handleQuickSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const product = products.find((p) => p.id === saleProductId);
-    if (!product || submitting) return;
+    if (!selectedSaleProduct || isStockInsufficient || submitting) return;
 
     setToastMessage(null);
     setSubmitting(true);
 
-    const unitPrice = product.sale_price ?? product.price ?? 0;
-    const unitCost = product.cost_price ?? product.cost ?? 0;
+    const unitPrice = selectedSaleProduct.sale_price ?? selectedSaleProduct.price ?? 0;
+    const unitCost = selectedSaleProduct.cost_price ?? selectedSaleProduct.cost ?? 0;
 
     try {
       const payload = {
         payment_method: paymentMethod,
         items: [
           {
-            product_id: product.id,
+            product_id: selectedSaleProduct.id,
             quantity: Number(saleQty),
             unit_price: unitPrice,
             unit_cost: unitCost,
@@ -130,7 +134,7 @@ export default function CajaPage() {
         throw new Error(data.error || 'No se pudo completar la venta.');
       }
 
-      setToastMessage({ type: 'success', text: `✅ Venta registrada y stock actualizado (-${saleQty} u. en ${product.name})` });
+      setToastMessage({ type: 'success', text: `✅ Venta registrada y stock actualizado (-${saleQty} u. en ${selectedSaleProduct.name})` });
       setSaleProductId('');
       setSaleQty(1);
 
@@ -227,7 +231,7 @@ export default function CajaPage() {
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
           <Wallet className="w-8 h-8 text-indigo-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Carga rápida de ventas (descuenta stock) y egresos/compras (suma stock)</p>
+        <p className="text-slate-400 text-sm mt-1">Todas las cifras expresadas en Pesos Argentinos (ARS, $)</p>
       </div>
 
       {/* Top Giant Action Selector */}
@@ -302,9 +306,10 @@ export default function CajaPage() {
                   <option value="">-- Selecciona producto vendido --</option>
                   {products.map((p) => {
                     const price = p.sale_price ?? p.price ?? 0;
+                    const isOutOfStock = p.stock <= 0;
                     return (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - ${price.toLocaleString('es-AR')} (Stock: {p.stock} u.)
+                      <option key={p.id} value={p.id} disabled={isOutOfStock}>
+                        {p.name} - ${price.toLocaleString('es-AR')} {isOutOfStock ? '(Agotado)' : `(Stock: ${p.stock} u.)`}
                       </option>
                     );
                   })}
@@ -323,7 +328,9 @@ export default function CajaPage() {
                   required
                   value={saleQty}
                   onChange={(e) => setSaleQty(Number(e.target.value))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className={`w-full bg-slate-800 border rounded-2xl px-4 py-3.5 text-xl font-bold text-white focus:outline-none focus:ring-2 ${
+                    isStockInsufficient ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:ring-emerald-500'
+                  }`}
                 />
               </div>
 
@@ -343,10 +350,18 @@ export default function CajaPage() {
               </div>
             </div>
 
+            {/* Strict Stock Validation Message */}
+            {isStockInsufficient && selectedSaleProduct && (
+              <div className="bg-rose-500/20 border border-rose-500 text-rose-300 p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                ❌ Stock insuficiente. Solo dispones de {availableStock} unidades para vender de "{selectedSaleProduct.name}".
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={submitting || !saleProductId}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 text-lg transition-all flex items-center justify-center gap-2"
+              disabled={submitting || !saleProductId || isStockInsufficient}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 text-lg transition-all flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
               {submitting ? 'Procesando venta...' : 'CONFIRMAR VENTA Y DESCONTAR STOCK'}
@@ -441,7 +456,7 @@ export default function CajaPage() {
 
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                3. Monto Total Pagado ($) *
+                3. Monto Total Pagado ($ ARS) *
               </label>
               <input
                 type="number"
@@ -469,7 +484,7 @@ export default function CajaPage() {
       {/* Unified Movimientos Timeline List */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
         <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3 flex items-center justify-between">
-          <span>Historial de Movimientos de Caja</span>
+          <span>Historial de Movimientos de Caja (ARS)</span>
           <span className="text-xs font-medium text-slate-400">Ingresos (+) y Egresos (-)</span>
         </h3>
 
@@ -508,7 +523,7 @@ export default function CajaPage() {
 
                 <div className="flex items-center gap-3">
                   <span className={`font-extrabold text-lg ${mov.type === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {mov.type === 'ingreso' ? '+' : '-'}${mov.amount.toLocaleString('es-AR')}
+                    {mov.type === 'ingreso' ? '+' : '-'}$ {mov.amount.toLocaleString('es-AR')}
                   </span>
                   {mov.type === 'egreso' && (
                     <button onClick={() => handleDeleteExpense(mov.id)} className="text-slate-500 hover:text-rose-400 p-2">
