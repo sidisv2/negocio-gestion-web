@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, PackageX, Percent, Calendar, ArrowUpRight, ArrowDownRight, Inbox, PlusCircle, Loader2, Trophy, Award } from 'lucide-react';
+import { DollarSign, TrendingUp, PackageX, Percent, Calendar, ArrowUpRight, ArrowDownRight, Inbox, PlusCircle, Loader2, Trophy, Award, Smartphone, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -51,13 +51,29 @@ export default function DashboardPage() {
     loadMetrics();
   }, []);
 
-  // 1. Facturación Total (sum total_amount in sales)
+  // Today's Date formatted
+  const todayDateStr = new Date().toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  // Calculate Today's Balance Bar
+  const todayStrISO = new Date().toISOString().split('T')[0];
+  const salesToday = sales
+    .filter((s) => s.created_at && s.created_at.startsWith(todayStrISO))
+    .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
+
+  const expensesToday = expenses
+    .filter((e) => e.created_at && e.created_at.startsWith(todayStrISO))
+    .reduce((acc, e) => acc + Number(e.amount || 0), 0);
+
+  const inCashToday = salesToday - expensesToday;
+
+  // KPIs
   const totalFacturacion = sales.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
-
-  // 2. Total Gastos (sum amount in expenses)
   const totalGastos = expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
-
-  // 3. Ganancia Neta Real (sum (unit_price - unit_cost) * quantity)
   const gananciaNetaReal = saleItems.length > 0
     ? saleItems.reduce((acc, item) => {
         const price = Number(item.unit_price || 0);
@@ -67,18 +83,16 @@ export default function DashboardPage() {
       }, 0)
     : Math.max(0, totalFacturacion - totalGastos);
 
-  // 4. Dinero Parado (sum cost_price * stock in products)
   const deadStockValue = products.reduce((acc, p) => {
     const cost = p.cost_price ?? p.cost ?? 0;
     return acc + cost * (p.stock || 0);
   }, 0);
 
-  // Margen Promedio Real (%)
   const margenPromedio = totalFacturacion > 0
     ? ((gananciaNetaReal / totalFacturacion) * 100).toFixed(1)
     : '0.0';
 
-  // 5. Comparador Semana Actual vs. Semana Anterior
+  // Weekly Growth Comparison
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -101,7 +115,7 @@ export default function DashboardPage() {
     weeklyGrowthPercentage = 100;
   }
 
-  // 6. Podio Top 3 Productos Más Rentables
+  // Top 3 Profitable Products
   const profitByProductMap: Record<string, { name: string; quantity: number; totalProfit: number }> = {};
 
   saleItems.forEach((item) => {
@@ -127,14 +141,19 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-7">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Dashboard & Métricas</h1>
-          <p className="text-slate-400 text-sm mt-1">Rentabilidad, crecimiento semanal y productos más valiosos (ARS, $)</p>
+      {/* Dynamic Header with Greeting & Date */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/10 px-3 py-1 rounded-xl border border-indigo-500/20 flex items-center gap-1.5 w-fit">
+              <Sparkles className="w-3.5 h-3.5" /> Atuel Celulares | Gestión
+            </span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">¡Hola Paola! 👋</h1>
+          <p className="text-slate-400 text-xs sm:text-sm capitalize">{todayDateStr}</p>
         </div>
 
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl gap-1 self-start sm:self-auto">
+        <div className="flex items-center bg-slate-900/80 border border-slate-800 p-1.5 rounded-2xl gap-1 self-start sm:self-auto backdrop-blur-md">
           <Calendar className="w-4 h-4 text-indigo-400 ml-2 mr-1" />
           <button
             onClick={() => setPeriod('7d')}
@@ -163,6 +182,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Today's Balance Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl backdrop-blur-md shadow-xl">
+        <div className="flex items-center gap-3 bg-slate-800/40 p-3.5 rounded-2xl border border-slate-700/50">
+          <div className="bg-emerald-500/20 p-2.5 rounded-xl text-emerald-400 font-bold text-xs">🟢</div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Ingresos Hoy</span>
+            <span className="text-lg font-extrabold text-emerald-400">+${salesToday.toLocaleString('es-AR')}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 bg-slate-800/40 p-3.5 rounded-2xl border border-slate-700/50">
+          <div className="bg-rose-500/20 p-2.5 rounded-xl text-rose-400 font-bold text-xs">🔴</div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Gastos Hoy</span>
+            <span className="text-lg font-extrabold text-rose-400">-${expensesToday.toLocaleString('es-AR')}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 bg-slate-800/40 p-3.5 rounded-2xl border border-slate-700/50">
+          <div className="bg-indigo-500/20 p-2.5 rounded-xl text-indigo-400 font-bold text-xs">💰</div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">En Caja Hoy</span>
+            <span className="text-lg font-extrabold text-indigo-300">${inCashToday.toLocaleString('es-AR')}</span>
+          </div>
+        </div>
+      </div>
+
       {/* KPI Cards Section */}
       {loading ? (
         <div className="flex justify-center py-20 text-slate-400">
@@ -172,7 +218,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Main 4 KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
+            <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl space-y-3">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider">Facturación Total</span>
                 <div className="bg-indigo-500/10 p-2.5 rounded-2xl text-indigo-400">
@@ -185,7 +231,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
+            <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl space-y-3">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider">Ganancia Neta Real</span>
                 <div className="bg-emerald-500/10 p-2.5 rounded-2xl text-emerald-400">
@@ -196,7 +242,7 @@ export default function DashboardPage() {
               <p className="text-xs text-emerald-400/80 font-medium">Margen real (Venta - Costo)</p>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
+            <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl space-y-3">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider">Total Gastos / Egresos</span>
                 <div className="bg-amber-500/10 p-2.5 rounded-2xl text-amber-400">
@@ -207,7 +253,7 @@ export default function DashboardPage() {
               <p className="text-xs text-amber-400/80 font-medium">Salidas de caja registradas</p>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
+            <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl space-y-3">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider">Dinero Parado (Stock)</span>
                 <div className="bg-rose-500/10 p-2.5 rounded-2xl text-rose-400">
@@ -219,10 +265,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* New Highlighted Visual Metrics: Weekly Growth & Top 3 Profitable Products */}
+          {/* Highlighted Visual Metrics: Weekly Growth & Top 3 Profitable Products */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Weekly Growth Comparison */}
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-col justify-between space-y-4">
+            <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl flex flex-col justify-between space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Semana Actual vs. Anterior</span>
                 <span className="text-xs font-medium text-slate-500">Últimos 7 días</span>
@@ -252,7 +298,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Top 3 Profitable Products Podium */}
-            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-4">
+            <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800/80 backdrop-blur-md p-6 rounded-3xl shadow-xl space-y-4">
               <div className="flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-400" />
                 <h3 className="text-base font-bold text-white">Top 3 Productos Más Rentables</h3>
@@ -299,7 +345,7 @@ export default function DashboardPage() {
 
       {/* Empty State */}
       {!loading && !hasData && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 text-center shadow-xl space-y-4">
+        <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md rounded-3xl p-10 text-center shadow-xl space-y-4">
           <div className="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-3xl flex items-center justify-center mx-auto border border-indigo-500/20">
             <Inbox className="w-8 h-8" />
           </div>

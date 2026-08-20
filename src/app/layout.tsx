@@ -1,13 +1,15 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { SidebarNavigation } from "@/components/SidebarNavigation";
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { SidebarNavigation } from '@/components/SidebarNavigation';
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "Gestión & Analítica - Mi Negocio",
-  description: "Sistema de Control de Caja, Inventario y Consultoría IA para Negocio Minorista",
+  title: 'Atuel Celulares | Gestión & Analítica',
+  description: 'Aplicación moderna de gestión, inventario, caja y consultoría con IA para Atuel Celulares',
+  manifest: '/manifest.json',
+  themeColor: '#0b0f19',
 };
 
 export default function RootLayout({
@@ -16,10 +18,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
-      <body className={`${inter.className} bg-slate-950 text-slate-100 min-h-screen flex flex-col md:flex-row antialiased selection:bg-indigo-500 selection:text-white pb-20 md:pb-0`}>
+    <html lang="es" className="dark">
+      <body className={`${inter.className} bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col md:flex-row antialiased selection:bg-indigo-500 selection:text-white`}>
         <SidebarNavigation />
-        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-8">
           {children}
         </main>
       </body>

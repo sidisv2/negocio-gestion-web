@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Product, supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Search, Plus, Trash2, Edit, AlertTriangle, Package, Loader2, CheckCircle2, AlertCircle, Percent, PlusCircle, MinusCircle } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, AlertTriangle, Package, Loader2, CheckCircle2, AlertCircle, Percent, PlusCircle, MinusCircle, Smartphone, Zap, BookOpen, Candy, ShieldCheck, Wrench, Box } from 'lucide-react';
 
 const CATEGORIES = [
   'Accesorios Celular',
@@ -14,6 +14,54 @@ const CATEGORIES = [
   'Varios / Otros',
 ];
 
+// Helper icon & color badge for categories
+function CategoryBadge({ category }: { category: string }) {
+  switch (category) {
+    case 'Accesorios Celular':
+      return (
+        <span className="bg-sky-500/10 text-sky-400 border border-sky-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <Smartphone className="w-3.5 h-3.5" /> Accesorios Celular
+        </span>
+      );
+    case 'Electrónica & Audio':
+      return (
+        <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <Zap className="w-3.5 h-3.5" /> Electrónica & Audio
+        </span>
+      );
+    case 'Librería & Papelería':
+      return (
+        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <BookOpen className="w-3.5 h-3.5" /> Librería & Papelería
+        </span>
+      );
+    case 'Chucherías / Golosinas':
+      return (
+        <span className="bg-pink-500/10 text-pink-400 border border-pink-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <Candy className="w-3.5 h-3.5" /> Golosinas
+        </span>
+      );
+    case 'Fundas & Vidrios Templados':
+      return (
+        <span className="bg-purple-500/10 text-purple-400 border border-purple-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <ShieldCheck className="w-3.5 h-3.5" /> Fundas & Vidrios
+        </span>
+      );
+    case 'Servicio Técnico / Reparaciones':
+      return (
+        <span className="bg-orange-500/10 text-orange-400 border border-orange-500/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <Wrench className="w-3.5 h-3.5" /> Servicio Técnico
+        </span>
+      );
+    default:
+      return (
+        <span className="bg-slate-700/30 text-slate-300 border border-slate-600/30 text-xs px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+          <Box className="w-3.5 h-3.5" /> {category}
+        </span>
+      );
+  }
+}
+
 export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,11 +70,9 @@ export default function InventarioPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Loading & Alert feedback states
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Form states
   const [formData, setFormData] = useState({
     name: '',
     category: 'Accesorios Celular',
@@ -180,7 +226,6 @@ export default function InventarioPage() {
     return matchesSearch && matchesCategory;
   });
 
-  // Calculate live margin for modal form
   const modalCostNum = parseFloat(formData.cost_price || '0');
   const modalSaleNum = parseFloat(formData.sale_price || '0');
   const calculatedMargin =
@@ -193,7 +238,7 @@ export default function InventarioPage() {
       {/* Toast Feedback Notification */}
       {toastMessage && (
         <div
-          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-xl animate-pulse ${
+          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-2xl backdrop-blur-md animate-pulse ${
             toastMessage.type === 'success'
               ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
               : 'bg-rose-500/20 border-rose-500 text-rose-300'
@@ -212,8 +257,10 @@ export default function InventarioPage() {
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Inventario de Productos</h1>
-          <p className="text-slate-400 text-sm mt-1">Control de catálogo, márgenes de ganancia y stock rápido (ARS, $)</p>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+            <Smartphone className="w-8 h-8 text-indigo-400" /> Inventario de Productos
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">Control visual de catálogo, stock mínimo y márgenes en ARS ($)</p>
         </div>
         <button
           onClick={() => handleOpenModal()}
@@ -223,23 +270,23 @@ export default function InventarioPage() {
         </button>
       </div>
 
-      {/* Filters Bar */}
+      {/* Instant Search Bar & Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="w-5 h-5 absolute left-3.5 top-3.5 text-slate-400" />
+          <Search className="w-5 h-5 absolute left-4 top-3.5 text-indigo-400" />
           <input
             type="text"
-            placeholder="Buscar por nombre..."
+            placeholder="🔍 Búsqueda rápida en vivo por nombre de producto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full bg-slate-900/80 border border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 backdrop-blur-md"
           />
         </div>
 
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+          className="bg-slate-900/80 border border-slate-800 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold backdrop-blur-md"
         >
           <option value="Todas">Todas las categorías</option>
           {CATEGORIES.map((cat) => (
@@ -250,8 +297,8 @@ export default function InventarioPage() {
         </select>
       </div>
 
-      {/* Products Table with Pricing & Quick Stock Adjust */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+      {/* Products Glassmorphism Table */}
+      <div className="bg-slate-900/60 border border-slate-800/80 backdrop-blur-md rounded-3xl overflow-hidden shadow-2xl">
         {loading ? (
           <div className="flex justify-center py-16 text-slate-400">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
@@ -275,13 +322,13 @@ export default function InventarioPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-800/60 text-slate-400 uppercase text-[11px] font-bold tracking-wider border-b border-slate-800">
+              <thead className="bg-slate-800/80 text-slate-400 uppercase text-[11px] font-bold tracking-wider border-b border-slate-800">
                 <tr>
                   <th className="p-4 pl-6">Producto / Categoría</th>
                   <th className="p-4">Costo ARS</th>
                   <th className="p-4">Precio Venta ARS</th>
                   <th className="p-4">Margen %</th>
-                  <th className="p-4">Stock Actual</th>
+                  <th className="p-4">Estado & Stock</th>
                   <th className="p-4 text-right pr-6">Acciones</th>
                 </tr>
               </thead>
@@ -290,47 +337,57 @@ export default function InventarioPage() {
                   const cost = p.cost_price ?? p.cost ?? 0;
                   const price = p.sale_price ?? p.price ?? 0;
                   const marginPct = cost > 0 ? (((price - cost) / cost) * 100).toFixed(1) : '0.0';
-                  const isLowStock = p.stock <= p.min_stock;
+
+                  // Stock Status Indicators
+                  const isOutOfStock = p.stock <= 0;
+                  const isLowStock = !isOutOfStock && p.stock <= p.min_stock;
 
                   return (
-                    <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="p-4 pl-6 space-y-1">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          {p.name}
-                          {isLowStock && (
-                            <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" /> Stock Bajo
-                            </span>
-                          )}
-                        </div>
-                        <span className="bg-slate-800 text-slate-400 text-[11px] px-2 py-0.5 rounded-md border border-slate-700 font-medium inline-block">
-                          {p.category}
-                        </span>
+                    <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-4 pl-6 space-y-1.5">
+                        <div className="font-extrabold text-white text-base">{p.name}</div>
+                        <CategoryBadge category={p.category} />
                       </td>
                       <td className="p-4 font-medium text-slate-400">${cost.toLocaleString('es-AR')}</td>
                       <td className="p-4 font-bold text-emerald-400">${price.toLocaleString('es-AR')}</td>
                       <td className="p-4 font-extrabold text-indigo-400">
-                        <span className="bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20">
+                        <span className="bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-500/20">
                           +{marginPct}%
                         </span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleQuickStockAdjust(p, -1)}
-                            className="text-slate-400 hover:text-rose-400 transition-colors"
-                          >
-                            <MinusCircle className="w-5 h-5" />
-                          </button>
-                          <span className={`font-bold min-w-[3rem] text-center ${isLowStock ? 'text-rose-400' : 'text-slate-200'}`}>
-                            {p.stock} u.
-                          </span>
-                          <button
-                            onClick={() => handleQuickStockAdjust(p, 1)}
-                            className="text-slate-400 hover:text-emerald-400 transition-colors"
-                          >
-                            <PlusCircle className="w-5 h-5" />
-                          </button>
+                        <div className="space-y-1">
+                          {/* Stock Status Badge */}
+                          {isOutOfStock ? (
+                            <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg flex items-center gap-1 w-fit animate-pulse">
+                              🔴 AGOTADO (0 u.)
+                            </span>
+                          ) : isLowStock ? (
+                            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg flex items-center gap-1 w-fit">
+                              🟡 STOCK BAJO ({p.stock} u.)
+                            </span>
+                          ) : (
+                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg flex items-center gap-1 w-fit">
+                              🟢 OPTIMO ({p.stock} u.)
+                            </span>
+                          )}
+
+                          {/* Quick Stock Controls */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              onClick={() => handleQuickStockAdjust(p, -1)}
+                              className="text-slate-400 hover:text-rose-400 active:scale-90 transition-transform"
+                            >
+                              <MinusCircle className="w-5 h-5" />
+                            </button>
+                            <span className="font-extrabold text-white text-xs w-8 text-center">{p.stock} u.</span>
+                            <button
+                              onClick={() => handleQuickStockAdjust(p, 1)}
+                              className="text-slate-400 hover:text-emerald-400 active:scale-90 transition-transform"
+                            >
+                              <PlusCircle className="w-5 h-5" />
+                            </button>
+                          </div>
                         </div>
                       </td>
                       <td className="p-4 text-right pr-6">
@@ -360,7 +417,7 @@ export default function InventarioPage() {
 
       {/* Modal Form */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-extrabold text-white">
               {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
@@ -404,7 +461,6 @@ export default function InventarioPage() {
                 )}
               </div>
 
-              {/* Explicit Pricing Section with Live Margin Calculator */}
               <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60 space-y-3">
                 <span className="text-xs font-extrabold text-indigo-400 uppercase tracking-wider block">
                   💰 Configuración de Precios ($ ARS)
