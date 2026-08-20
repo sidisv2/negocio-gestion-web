@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
-import { isSupabaseConfigured, supabaseAdmin, AIInsightCard } from '@/lib/supabase';
-
-const apiKey = process.env.GEMINI_API_KEY || '';
+import { isSupabaseConfigured, supabaseAdmin } from '@/lib/supabase';
 
 export async function POST() {
   try {
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY || '';
+
     const businessMetrics = {
       period: 'Últimos 7 días',
       totalSalesAmount: 503000,
@@ -22,90 +21,108 @@ export async function POST() {
       ],
     };
 
-    let generatedCards: AIInsightCard[] = [];
+    let resultData = null;
 
-    if (apiKey && apiKey !== 'your-gemini-api-key') {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `
-Eres un asesor de negocios minoristas claro, empático y práctico para una dueña de negocio no técnica.
-Analiza los siguientes números reales de ventas de su negocio (Accesorios de Celular, Librería y Golosinas):
-
-${JSON.stringify(businessMetrics, null, 2)}
-
-Devuelve EXCLUSIVAMENTE un objeto JSON válido con una propiedad "cards" conteniendo exactamente 4 elementos con esta estructura:
-{
-  "cards": [
-    {
-      "title": "Título corto y positivo",
-      "type": "success", 
-      "description": "Explicación clara en 2 oraciones sin palabras técnicas ni jerga.",
-      "action": "Acción recomendada específica para la semana."
-    },
-    ...
-  ]
-}
-
-Donde "type" puede ser: "success" (lo que mejor funciona), "warning" (alerta stock o egresos), "opportunity" (oportunidad combo/margen) o "action" (acción de la semana).
-`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
+    if (apiKey && apiKey !== 'your-gemini-api-key' && apiKey !== 'your-openrouter-api-key') {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://negocio-gestion-web.vercel.app',
+          'X-Title': 'Negocio Gestion Web',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `Eres un asesor de negocios minoristas claro, empático y práctico para una dueña de negocio no técnica.
+Analiza las métricas del negocio y devuelve EXCLUSIVAMENTE un objeto JSON válido con las siguientes 4 claves:
+- "summary": Resumen general del estado comercial en 2 oraciones sencillas.
+- "topSellersTips": Consejo para aprovechar los productos estrella y mantener su stock.
+- "deadStockAlerts": Alerta de productos estancados y estrategia para liquidarlos (ej. combos o descuentos).
+- "financialAdvice": Consejo práctico sobre margen, caja y egresos.`,
+            },
+            {
+              role: 'user',
+              content: `Métricas reales del negocio: ${JSON.stringify(businessMetrics, null, 2)}`,
+            },
+          ],
+          response_format: { type: 'json_object' },
+        }),
       });
 
-      const rawText = response.text || '';
-      const cleanJson = rawText.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
-      if (parsed?.cards) {
-        generatedCards = parsed.cards;
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        try {
+          const cleanJson = content.replace(/```json|```/g, '').trim();
+          resultData = JSON.parse(cleanJson);
+        } catch (e) {
+          console.error('Error parseando JSON de OpenRouter:', e);
+        }
+      } else {
+        console.error('OpenRouter HTTP error:', await response.text());
       }
     }
 
-    // Fallback if Gemini key not set or parsing error
-    if (generatedCards.length === 0) {
-      generatedCards = [
-        {
-          title: 'Lo que Mejor Funciona',
-          type: 'success',
-          description: 'Las Fundas de Silicona y los Alfajores son tus productos estrella de la semana, representando el 40% de los ingresos totales.',
-          action: 'Asegurar stock suficiente de fundas para el fin de semana.',
-        },
-        {
-          title: 'Alerta de Stock Estancado',
-          type: 'warning',
-          description: 'Las Abrochadoras de Bolsillo llevan más de 10 días sin rotación significativa y ocupan espacio en el mostrador.',
-          action: 'Crear un combo promocional "Cuaderno + Abrochadora" con 15% de descuento.',
-        },
-        {
-          title: 'Estado del Margen & Caja',
-          type: 'opportunity',
-          description: 'Tus egresos de caja ($42,700) están perfectamente controlados frente a tus ingresos ($503,000), dejando un margen del 42%.',
-          action: 'Mantener el control de compras a proveedores por categoría.',
-        },
-        {
-          title: 'Acción Recomendada para la Semana',
-          type: 'action',
-          description: 'Aumentar en un 10% el pedido de vidrios templados universales para capitalizar el alto flujo del punto de venta.',
-          action: 'Revisar pedido con proveedor de accesorios celular.',
-        },
-      ];
+    // Fallback estructurado si no hay API key o falla la API
+    if (!resultData) {
+      resultData = {
+        summary: 'Tu negocio muestra un excelente nivel de ventas esta semana con una rentabilidad neta sólida del 42%.',
+        topSellersTips: 'Las Fundas de Silicona y los Alfajores son tus productos estrella. Mantén siempre stock visible cerca de la caja.',
+        deadStockAlerts: 'Las Abrochadoras de Bolsillo llevan 14 días sin venderse. Armá un combo "Cuaderno + Abrochadora" con 15% de descuento.',
+        financialAdvice: 'Tus egresos ($42,700) representan solo un 8.4% de las ventas. Mantén ese ritmo de control de gastos.',
+      };
     }
 
-    // Cache to Supabase if configured
+    // Adaptación para tarjetas de la interfaz manteniendo compatibilidad
+    const cards = [
+      {
+        title: 'Resumen General',
+        type: 'success' as const,
+        description: resultData.summary,
+        action: 'Revisar metas de venta semanales.',
+      },
+      {
+        title: 'Productos Estrella',
+        type: 'opportunity' as const,
+        description: resultData.topSellersTips,
+        action: 'Asegurar reposición con proveedor.',
+      },
+      {
+        title: 'Alerta de Stock Estancado',
+        type: 'warning' as const,
+        description: resultData.deadStockAlerts,
+        action: 'Lanzar combo promocional.',
+      },
+      {
+        title: 'Consejo Financiero & Caja',
+        type: 'action' as const,
+        description: resultData.financialAdvice,
+        action: 'Mantener control estricto de egresos.',
+      },
+    ];
+
     if (isSupabaseConfigured) {
       await supabaseAdmin.from('ai_insights_cache').insert([
         {
-          insight_type: 'weekly_retail_analysis',
-          content: { cards: generatedCards },
+          insight_type: 'openrouter_weekly_analysis',
+          content: { ...resultData, cards },
         },
       ]);
     }
 
     return NextResponse.json({
-      cards: generatedCards,
+      summary: resultData.summary,
+      topSellersTips: resultData.topSellersTips,
+      deadStockAlerts: resultData.deadStockAlerts,
+      financialAdvice: resultData.financialAdvice,
+      cards,
       cached_at: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Error analizando datos con Gemini' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Error en endpoint OpenRouter AI' }, { status: 500 });
   }
 }
