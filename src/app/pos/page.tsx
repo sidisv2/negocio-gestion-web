@@ -63,7 +63,10 @@ export default function POSPage() {
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
-  const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const totalAmount = cart.reduce((sum, item) => {
+    const price = item.product.sale_price ?? item.product.price ?? 0;
+    return sum + price * item.quantity;
+  }, 0);
 
   const handleCheckout = async () => {
     if (cart.length === 0 || submitting) return;
@@ -75,7 +78,7 @@ export default function POSPage() {
         items: cart.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
-          unit_price: item.product.price,
+          unit_price: item.product.sale_price ?? item.product.price ?? 0,
         })),
       };
 
@@ -88,7 +91,7 @@ export default function POSPage() {
       if (res.ok) {
         setSaleCompleted(true);
         setCart([]);
-        fetchInventory(); // Reload updated stock
+        fetchInventory();
         setTimeout(() => setSaleCompleted(false), 3000);
       }
     } catch (err) {
@@ -144,27 +147,30 @@ export default function POSPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto pr-1">
-            {products.map((product) => (
-              <button
-                key={product.id}
-                onClick={() => addToCart(product)}
-                className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 p-4 rounded-2xl text-left transition-all hover:scale-[1.02] flex flex-col justify-between group shadow-sm"
-              >
-                <div>
-                  <span className="text-[11px] font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">
-                    {product.category}
-                  </span>
-                  <h3 className="font-semibold text-white mt-2 text-sm line-clamp-2 group-hover:text-indigo-300">
-                    {product.name}
-                  </h3>
-                </div>
+            {products.map((product) => {
+              const price = product.sale_price ?? product.price ?? 0;
+              return (
+                <button
+                  key={product.id}
+                  onClick={() => addToCart(product)}
+                  className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 p-4 rounded-2xl text-left transition-all hover:scale-[1.02] flex flex-col justify-between group shadow-sm"
+                >
+                  <div>
+                    <span className="text-[11px] font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">
+                      {product.category}
+                    </span>
+                    <h3 className="font-semibold text-white mt-2 text-sm line-clamp-2 group-hover:text-indigo-300">
+                      {product.name}
+                    </h3>
+                  </div>
 
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-lg font-bold text-emerald-400">${product.price.toLocaleString('es-AR')}</span>
-                  <span className="text-xs text-slate-400">Stock: {product.stock}</span>
-                </div>
-              </button>
-            ))}
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-lg font-bold text-emerald-400">${price.toLocaleString('es-AR')}</span>
+                    <span className="text-xs text-slate-400">Stock: {product.stock}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -189,30 +195,33 @@ export default function POSPage() {
                 <br /> Toca cualquier producto para añadirlo.
               </div>
             ) : (
-              cart.map(({ product, quantity }) => (
-                <div key={product.id} className="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
-                  <div className="flex-1 pr-2">
-                    <h4 className="font-medium text-white text-sm line-clamp-1">{product.name}</h4>
-                    <span className="text-xs text-slate-400">${product.price.toLocaleString('es-AR')} c/u</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-slate-900 rounded-lg border border-slate-700">
-                      <button onClick={() => updateQuantity(product.id, -1)} className="p-1 hover:text-indigo-400">
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="px-2 text-sm font-semibold text-white">{quantity}</span>
-                      <button onClick={() => updateQuantity(product.id, 1)} className="p-1 hover:text-indigo-400">
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+              cart.map(({ product, quantity }) => {
+                const itemPrice = product.sale_price ?? product.price ?? 0;
+                return (
+                  <div key={product.id} className="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                    <div className="flex-1 pr-2">
+                      <h4 className="font-medium text-white text-sm line-clamp-1">{product.name}</h4>
+                      <span className="text-xs text-slate-400">${itemPrice.toLocaleString('es-AR')} c/u</span>
                     </div>
 
-                    <button onClick={() => removeFromCart(product.id)} className="text-rose-400 hover:text-rose-300 p-1">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-slate-900 rounded-lg border border-slate-700">
+                        <button onClick={() => updateQuantity(product.id, -1)} className="p-1 hover:text-indigo-400">
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="px-2 text-sm font-semibold text-white">{quantity}</span>
+                        <button onClick={() => updateQuantity(product.id, 1)} className="p-1 hover:text-indigo-400">
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <button onClick={() => removeFromCart(product.id)} className="text-rose-400 hover:text-rose-300 p-1">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

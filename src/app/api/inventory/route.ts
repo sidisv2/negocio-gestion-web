@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, supabaseAdmin, Product } from '@/lib/supabase';
 
-// In-memory fallback array initialized EMPTY (No hardcoded mock items)
 let localProducts: Product[] = [];
 
 export async function GET(request: Request) {
@@ -26,14 +25,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ products: data || [] });
     }
 
-    // In-memory fallback
     let filtered = localProducts;
     if (category && category !== 'Todas') {
       filtered = filtered.filter((p) => p.category === category);
     }
     if (search) {
       const q = search.toLowerCase();
-      filtered = filtered.filter((p) => p.name.toLowerCase().includes(q) || p.barcode.includes(q));
+      filtered = filtered.filter((p) => p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q)));
     }
 
     return NextResponse.json({ products: filtered });
@@ -45,16 +43,19 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { barcode, name, category, cost, price, stock, min_stock } = body;
+    const { barcode, name, category, cost_price, sale_price, cost, price, stock, min_stock } = body;
 
-    if (!name || price === undefined) {
-      return NextResponse.json({ error: 'Faltan campos obligatorios' }, { status: 400 });
+    const finalSalePrice = sale_price ?? price ?? 0;
+    const finalCostPrice = cost_price ?? cost ?? 0;
+
+    if (!name) {
+      return NextResponse.json({ error: 'Falta nombre de producto' }, { status: 400 });
     }
 
     if (isSupabaseConfigured) {
       const { data, error } = await supabaseAdmin
         .from('products')
-        .insert([{ barcode, name, category, cost, price, stock, min_stock }])
+        .insert([{ barcode: barcode || null, name, category, cost_price: finalCostPrice, sale_price: finalSalePrice, stock: Number(stock) || 0, min_stock: Number(min_stock) || 5 }])
         .select()
         .single();
 
@@ -67,8 +68,10 @@ export async function POST(request: Request) {
       barcode: barcode || '',
       name,
       category: category || 'Varios',
-      cost: Number(cost) || 0,
-      price: Number(price) || 0,
+      cost_price: finalCostPrice,
+      sale_price: finalSalePrice,
+      cost: finalCostPrice,
+      price: finalSalePrice,
       stock: Number(stock) || 0,
       min_stock: Number(min_stock) || 5,
       created_at: new Date().toISOString(),

@@ -1,43 +1,87 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Expense } from '@/lib/supabase';
-import { PlusCircle, MinusCircle, Trash2, Calendar, Tag, Loader2, CheckCircle2, Wallet } from 'lucide-react';
+import { Product, Expense } from '@/lib/supabase';
+import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus } from 'lucide-react';
 
 export default function CajaPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [activeType, setActiveType] = useState<'ingreso' | 'egreso'>('egreso');
+  const [activeType, setActiveType] = useState<'ingreso' | 'egreso'>('ingreso');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Form State (Ultra simple 3 fields)
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<Expense['category']>('Mercadería');
+  // Venta Rápida (Ingreso)
+  const [saleProductId, setSaleProductId] = useState('');
+  const [saleQty, setSaleQty] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'MercadoPago' | 'Tarjeta'>('Efectivo');
 
-  const categoriesList: Expense['category'][] = ['Mercadería', 'Servicios', 'Alquiler', 'Varios'];
+  // Egreso (Compra de stock o Gastos)
+  const [expenseCategory, setExpenseCategory] = useState<'mercaderia' | 'servicios' | 'alquiler' | 'varios'>('mercaderia');
+  const [expenseDesc, setExpenseDesc] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [purchaseProductId, setPurchaseProductId] = useState('');
+  const [purchaseQty, setPurchaseQty] = useState(1);
 
-  const fetchExpenses = async () => {
+  const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/expenses');
-      const data = await res.json();
-      setExpenses(data.expenses || []);
+      const [expRes, prodRes] = await Promise.all([
+        fetch('/api/expenses'),
+        fetch('/api/inventory'),
+      ]);
+      const expData = await expRes.json();
+      const prodData = await prodRes.json();
+
+      setExpenses(expData.expenses || []);
+      setProducts(prodData.products || []);
     } catch (err) {
-      console.error('Error cargando movimientos:', err);
+      console.error('Error cargando datos:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchExpenses();
+    fetchInitialData();
   }, []);
 
-  const handleAddExpense = async (e: React.FormEvent) => {
+  const handleQuickSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !description || submitting) return;
+    const product = products.find((p) => p.id === saleProductId);
+    if (!product || submitting) return;
+
+    const unitPrice = product.sale_price ?? product.price ?? 0;
+
+    try {
+      setSubmitting(true);
+      const res = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_method: paymentMethod,
+          items: [{ product_id: product.id, quantity: Number(saleQty), unit_price: unitPrice }],
+        }),
+      });
+
+      if (res.ok) {
+        setSuccessMsg(`¡Venta de ${saleQty}x ${product.name} registrada! Stock descontado automáticamente.`);
+        setSaleProductId('');
+        setSaleQty(1);
+        fetchInitialData();
+        setTimeout(() => setSuccessMsg(''), 3500);
+      }
+    } catch (err) {
+      console.error('Error registrando venta:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expenseDesc || !expenseAmount || submitting) return;
 
     try {
       setSubmitting(true);
@@ -45,21 +89,30 @@ export default function CajaPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          description,
-          amount: Number(amount),
-          category: selectedCategory,
+          description: expenseDesc,
+          amount: Number(expenseAmount),
+          category: expenseCategory,
+          product_id: expenseCategory === 'mercaderia' ? purchaseProductId : undefined,
+          quantity_purchased: expenseCategory === 'mercaderia' ? Number(purchaseQty) : undefined,
         }),
       });
 
       if (res.ok) {
-        setSuccessMsg(`¡Movimiento de $${Number(amount).toLocaleString('es-AR')} guardado con éxito!`);
-        setAmount('');
-        setDescription('');
-        fetchExpenses();
-        setTimeout(() => setSuccessMsg(''), 3000);
+        const selectedProd = products.find((p) => p.id === purchaseProductId);
+        const stockMsg = expenseCategory === 'mercaderia' && selectedProd
+          ? ` (+${purchaseQty} unidades sumadas a ${selectedProd.name})`
+          : '';
+
+        setSuccessMsg(`¡Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado!${stockMsg}`);
+        setExpenseDesc('');
+        setExpenseAmount('');
+        setPurchaseProductId('');
+        setPurchaseQty(1);
+        fetchInitialData();
+        setTimeout(() => setSuccessMsg(''), 3500);
       }
     } catch (err) {
-      console.error('Error registrando movimiento:', err);
+      console.error('Error registrando egreso:', err);
     } finally {
       setSubmitting(false);
     }
@@ -70,23 +123,21 @@ export default function CajaPage() {
       setExpenses((prev) => prev.filter((e) => e.id !== id));
       await fetch(`/api/expenses?id=${id}`, { method: 'DELETE' });
     } catch (err) {
-      console.error('Error eliminando movimiento:', err);
+      console.error('Error eliminando registro:', err);
     }
   };
-
-  const totalEgresos = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
-          <Wallet className="w-8 h-8 text-indigo-400" /> Registro de Caja & Gastos
+          <Wallet className="w-8 h-8 text-indigo-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Gestión súper simple para cargar egresos y controlar el efectivo</p>
+        <p className="text-slate-400 text-sm mt-1">Carga rápida de ventas (descuenta stock) y egresos/compras (suma stock)</p>
       </div>
 
-      {/* Top Giant Action Buttons */}
+      {/* Top Giant Action Selector */}
       <div className="grid grid-cols-2 gap-4">
         <button
           type="button"
@@ -101,8 +152,8 @@ export default function CajaPage() {
             <PlusCircle className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">🟢 Entrada</span>
-            <span className="text-base sm:text-lg font-bold text-white leading-tight">Venta Rápida</span>
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">🟢 Ingreso / Venta</span>
+            <span className="text-base sm:text-lg font-bold text-white leading-tight">Cobro & Descuento de Stock</span>
           </div>
         </button>
 
@@ -119,127 +170,217 @@ export default function CajaPage() {
             <MinusCircle className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-xs font-bold text-rose-400 uppercase tracking-wider block">🔴 Salida</span>
-            <span className="text-base sm:text-lg font-bold text-white leading-tight">Gasto / Compra</span>
+            <span className="text-xs font-bold text-rose-400 uppercase tracking-wider block">🔴 Egreso / Compra</span>
+            <span className="text-base sm:text-lg font-bold text-white leading-tight">Gastos & Reposición de Stock</span>
           </div>
         </button>
       </div>
 
       {/* Success Banner */}
       {successMsg && (
-        <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 font-semibold text-sm animate-bounce">
+        <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 font-semibold text-sm animate-pulse">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
           {successMsg}
         </div>
       )}
 
-      {/* Form Container */}
-      <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
-        <h2 className="text-xl font-bold text-white">
-          {activeType === 'egreso' ? 'Registrar Salida de Dinero' : 'Registrar Ingreso de Caja'}
-        </h2>
+      {/* INGRESO: VENTA RÁPIDA */}
+      {activeType === 'ingreso' && (
+        <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-emerald-400" /> Registrar Venta (Descuenta Stock)
+          </h2>
 
-        <form onSubmit={handleAddExpense} className="space-y-5">
-          {/* Field 1: Large Number Keyboard Amount */}
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              1. Monto ($)
-            </label>
-            <div className="relative">
-              <span className="absolute left-4 top-3.5 text-2xl font-extrabold text-slate-500">$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                placeholder="0.00"
+          <form onSubmit={handleQuickSaleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                1. Seleccionar Producto
+              </label>
+              <select
                 required
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl pl-10 pr-4 py-3.5 text-3xl font-extrabold text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                value={saleProductId}
+                onChange={(e) => setSaleProductId(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">-- Selecciona producto vendido --</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (${(p.sale_price ?? p.price ?? 0).toLocaleString('es-AR')}) - Stock disponible: {p.stock} u.
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  2. Cantidad Vendida
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={saleQty}
+                  onChange={(e) => setSaleQty(Number(e.target.value))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  3. Método de Cobro
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as any)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="MercadoPago">MercadoPago</option>
+                  <option value="Tarjeta">Tarjeta</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting || !saleProductId}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 text-lg transition-all flex items-center justify-center gap-2"
+            >
+              {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
+              {submitting ? 'PROCESANDO VENTA...' : 'CONFIRMAR VENTA Y DESCONTAR STOCK'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* EGRESO: COMPRA DE STOCK O GASTO GENERAL */}
+      {activeType === 'egreso' && (
+        <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <PackagePlus className="w-5 h-5 text-rose-400" /> Registrar Egreso de Caja / Compra
+          </h2>
+
+          <form onSubmit={handleExpenseSubmit} className="space-y-5">
+            {/* Category Select */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                1. Tipo de Egreso
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'mercaderia', label: '📦 Stock / Mercadería' },
+                  { id: 'servicios', label: '💡 Servicios' },
+                  { id: 'alquiler', label: '🏠 Alquiler' },
+                  { id: 'varios', label: '📑 Varios' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setExpenseCategory(item.id as any)}
+                    className={`py-3 px-3 rounded-2xl text-xs font-bold transition-all border ${
+                      expenseCategory === item.id
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-md scale-[1.02]'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* If Mercadería: Option to attach product and quantity to sum stock */}
+            {expenseCategory === 'mercaderia' && (
+              <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 space-y-4">
+                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
+                  Sumar Stock a Producto Existente (Opcional)
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <select
+                      value={purchaseProductId}
+                      onChange={(e) => setPurchaseProductId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-xs font-medium focus:outline-none"
+                    >
+                      <option value="">-- No vincular / Solo registrar costo --</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (Stock actual: {p.stock})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Cant. comprada"
+                      value={purchaseQty}
+                      onChange={(e) => setPurchaseQty(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Description */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                2. Concepto / Detalle
+              </label>
+              <input
+                type="text"
+                placeholder='Ej. "Reposición fundas proveedor Arcor", "Luz local"'
+                required
+                value={expenseDesc}
+                onChange={(e) => setExpenseDesc(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-          </div>
 
-          {/* Field 2: Concept */}
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              2. Concepto / Motivo
-            </label>
-            <input
-              type="text"
-              placeholder='Ej: "Compra golosinas", "Pago Luz", "Bolsas"'
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-base font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {/* Field 3: Touch Category Chips */}
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              3. Categoría Rápida
-            </label>
-            <div className="flex flex-wrap gap-2.5">
-              {categoriesList.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
-                    selectedCategory === cat
-                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-md scale-[1.03]'
-                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            {/* Amount */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                3. Monto Total Pagado ($)
+              </label>
+              <input
+                type="number"
+                placeholder="0.00"
+                required
+                value={expenseAmount}
+                onChange={(e) => setExpenseAmount(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-2xl font-extrabold text-rose-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500"
+              />
             </div>
-          </div>
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-rose-600/30 text-lg transition-all flex items-center justify-center gap-2 mt-2"
-          >
-            {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-            {submitting ? 'GUARDANDO...' : 'GUARDAR MOVIMIENTO'}
-          </button>
-        </form>
-      </div>
-
-      {/* Expenses History List */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div>
-            <h3 className="font-bold text-white text-xl">Historial de Caja</h3>
-            <p className="text-slate-400 text-xs mt-0.5">Egresos totales: ${totalEgresos.toLocaleString('es-AR')}</p>
-          </div>
-          <span className="text-xs font-bold bg-slate-800 text-slate-300 px-3 py-1 rounded-full">
-            {expenses.length} registros
-          </span>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-rose-600/30 text-lg transition-all flex items-center justify-center gap-2"
+            >
+              {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
+              {submitting ? 'GUARDANDO EGRESO...' : 'GUARDAR EGRESO & REPONER STOCK'}
+            </button>
+          </form>
         </div>
+      )}
 
-        {loading ? (
-          <div className="flex justify-center py-10 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-          </div>
-        ) : expenses.length === 0 ? (
-          <div className="text-center py-10 text-slate-500 text-sm">
-            No hay movimientos registrados en caja aún.
-          </div>
+      {/* History List */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
+        <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3">Historial de Salidas Registradas</h3>
+        {expenses.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">No hay egresos registrados aún.</div>
         ) : (
-          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
             {expenses.map((exp) => (
-              <div
-                key={exp.id}
-                className="flex items-center justify-between bg-slate-800/50 hover:bg-slate-800/80 p-4 rounded-2xl border border-slate-700/50 transition-all group"
-              >
+              <div key={exp.id} className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
                 <div className="space-y-1">
                   <h4 className="font-bold text-white text-base">{exp.description}</h4>
                   <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span className="bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-md font-semibold border border-amber-500/20">
+                    <span className="bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-md font-semibold border border-amber-500/20 uppercase">
                       {exp.category}
                     </span>
                     <span className="flex items-center gap-1">
@@ -249,15 +390,9 @@ export default function CajaPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <span className="font-extrabold text-rose-400 text-lg">
-                    -${Number(exp.amount).toLocaleString('es-AR')}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteExpense(exp.id)}
-                    title="Eliminar registro"
-                    className="text-slate-500 hover:text-rose-400 p-2 rounded-xl hover:bg-rose-500/10 transition-all"
-                  >
+                <div className="flex items-center gap-3">
+                  <span className="font-extrabold text-rose-400 text-lg">-${Number(exp.amount).toLocaleString('es-AR')}</span>
+                  <button onClick={() => handleDeleteExpense(exp.id)} className="text-slate-500 hover:text-rose-400 p-2">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>

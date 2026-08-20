@@ -29,11 +29,14 @@ export const supabaseAdmin = createClient(
 
 export type Product = {
   id: string;
-  barcode: string;
+  user_id?: string;
+  barcode?: string;
   name: string;
   category: 'Accesorios' | 'Librería' | 'Golosinas' | 'Varios';
-  cost: number;
-  price: number;
+  cost_price?: number;
+  cost?: number;
+  sale_price?: number;
+  price?: number;
   stock: number;
   min_stock: number;
   created_at?: string;
@@ -44,19 +47,25 @@ export type SaleItemInput = {
   product_id: string;
   quantity: number;
   unit_price: number;
+  unit_cost?: number;
 };
 
 export type Sale = {
   id: string;
+  user_id?: string;
   total_amount: number;
   payment_method: 'Efectivo' | 'Tarjeta' | 'Transferencia' | 'MercadoPago';
+  notes?: string;
   created_at: string;
 };
 
 export type Expense = {
   id: string;
+  user_id?: string;
   description: string;
   amount: number;
-  category: 'Mercadería' | 'Servicios' | 'Alquiler' | 'Varios' | 'Proveedor' | 'Retiro de Caja';
+  category: 'mercaderia' | 'servicios' | 'alquiler' | 'varios';
+  product_id?: string;
+  quantity_purchased?: number;
   created_at: string;
 };
