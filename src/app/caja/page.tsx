@@ -36,15 +36,27 @@ export default function CajaPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const urlExp = currentUser?.id ? `/api/expenses?userId=${currentUser.id}` : '/api/expenses';
-      const urlProd = currentUser?.id ? `/api/inventory?userId=${currentUser.id}` : '/api/inventory';
+      if (isSupabaseConfigured && currentUser) {
+        // Direct RLS query for instant freshness
+        const [expRes, prodRes] = await Promise.all([
+          supabase.from('expenses').select('*').order('created_at', { ascending: false }),
+          supabase.from('products').select('*').order('name', { ascending: true }),
+        ]);
 
-      const [expRes, prodRes] = await Promise.all([fetch(urlExp), fetch(urlProd)]);
-      const expData = await expRes.json();
-      const prodData = await prodRes.json();
+        if (expRes.data) setExpenses(expRes.data as any);
+        if (prodRes.data) setProducts(prodRes.data as any);
+      } else {
+        // Fallback API Route call
+        const urlExp = currentUser?.id ? `/api/expenses?userId=${currentUser.id}` : '/api/expenses';
+        const urlProd = currentUser?.id ? `/api/inventory?userId=${currentUser.id}` : '/api/inventory';
 
-      setExpenses(expData.expenses || []);
-      setProducts(prodData.products || []);
+        const [expRes, prodRes] = await Promise.all([fetch(urlExp), fetch(urlProd)]);
+        const expData = await expRes.json();
+        const prodData = await prodRes.json();
+
+        setExpenses(expData.expenses || []);
+        setProducts(prodData.products || []);
+      }
     } catch (err) {
       console.error('Error cargando datos:', err);
     } finally {
@@ -96,6 +108,8 @@ export default function CajaPage() {
       setToastMessage({ type: 'success', text: `✅ Venta registrada y stock actualizado (-${saleQty} u. en ${product.name})` });
       setSaleProductId('');
       setSaleQty(1);
+
+      // Instant refresh of inventory and movements
       await fetchInitialData();
     } catch (err: any) {
       console.error('Error registrando venta:', err);
@@ -140,10 +154,17 @@ export default function CajaPage() {
         : '';
 
       setToastMessage({ type: 'success', text: `✅ Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado${stockMsg}` });
+
+      // Optimistic local state insert for zero delay UI update
+      if (data.expense) {
+        setExpenses((prev) => [data.expense, ...prev]);
+      }
+
       setExpenseDesc('');
       setExpenseAmount('');
       setPurchaseProductId('');
       setPurchaseQty(1);
+
       await fetchInitialData();
     } catch (err: any) {
       console.error('Error registrando egreso:', err);
