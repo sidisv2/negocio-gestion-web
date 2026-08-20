@@ -1,128 +1,121 @@
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, supabaseAdmin } from '@/lib/supabase';
+import { INITIAL_PRODUCTS } from '@/lib/mockData';
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = await request.json().catch(() => ({}));
+    const { messages = [] } = body;
+
     const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY || '';
 
-    const businessMetrics = {
-      period: 'Últimos 7 días',
-      totalSalesAmount: 503000,
-      totalExpensesAmount: 42700,
-      netProfit: 215000,
-      topBestSellers: [
-        { name: 'Funda Silicona iPhone 13/14', unitsSold: 42, category: 'Accesorios' },
-        { name: 'Alfajor de Chocolate Triples', unitsSold: 38, category: 'Golosinas' },
-        { name: 'Vidrio Templado 9D Universal', unitsSold: 29, category: 'Accesorios' },
-      ],
-      topStagnantProducts: [
-        { name: 'Abrochadora de Bolsillo', stockRemaining: 7, daysWithoutSale: 14 },
-        { name: 'Set Bolígrafos 4 Colores', stockRemaining: 30, daysWithoutSale: 10 },
-      ],
-    };
+    if (!apiKey || apiKey === 'your-gemini-api-key' || apiKey === 'your-openrouter-api-key') {
+      return NextResponse.json(
+        { error: 'Falta la API Key (OPENROUTER_API_KEY o GEMINI_API_KEY) en las variables de entorno.' },
+        { status: 500 }
+      );
+    }
 
-    let resultData = null;
+    let productsData: any[] = [];
+    let salesData: any[] = [];
+    let expensesData: any[] = [];
+    let isRealDataPresent = false;
 
-    if (apiKey && apiKey !== 'your-gemini-api-key' && apiKey !== 'your-openrouter-api-key') {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://negocio-gestion-web.vercel.app',
-          'X-Title': 'Negocio Gestion Web',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            {
-              role: 'system',
-              content: `Eres un asesor de negocios minoristas claro, empático y práctico para una dueña de negocio no técnica.
-Analiza las métricas del negocio y devuelve EXCLUSIVAMENTE un objeto JSON válido con las siguientes 4 claves:
-- "summary": Resumen general del estado comercial en 2 oraciones sencillas.
-- "topSellersTips": Consejo para aprovechar los productos estrella y mantener su stock.
-- "deadStockAlerts": Alerta de productos estancados y estrategia para liquidarlos (ej. combos o descuentos).
-- "financialAdvice": Consejo práctico sobre margen, caja y egresos.`,
-            },
-            {
-              role: 'user',
-              content: `Métricas reales del negocio: ${JSON.stringify(businessMetrics, null, 2)}`,
-            },
-          ],
-          response_format: { type: 'json_object' },
-        }),
-      });
+    if (isSupabaseConfigured) {
+      const [prodRes, salesRes, expRes] = await Promise.all([
+        supabaseAdmin.from('products').select('*'),
+        supabaseAdmin.from('sales').select('*, sale_items(*)'),
+        supabaseAdmin.from('expenses').select('*'),
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
-        try {
-          const cleanJson = content.replace(/```json|```/g, '').trim();
-          resultData = JSON.parse(cleanJson);
-        } catch (e) {
-          console.error('Error parseando JSON de OpenRouter:', e);
-        }
-      } else {
-        console.error('OpenRouter HTTP error:', await response.text());
+      productsData = prodRes.data || [];
+      salesData = salesRes.data || [];
+      expensesData = expRes.data || [];
+
+      if (productsData.length > 0 || salesData.length > 0 || expensesData.length > 0) {
+        isRealDataPresent = true;
       }
     }
 
-    // Fallback estructurado si no hay API key o falla la API
-    if (!resultData) {
-      resultData = {
-        summary: 'Tu negocio muestra un excelente nivel de ventas esta semana con una rentabilidad neta sólida del 42%.',
-        topSellersTips: 'Las Fundas de Silicona y los Alfajores son tus productos estrella. Mantén siempre stock visible cerca de la caja.',
-        deadStockAlerts: 'Las Abrochadoras de Bolsillo llevan 14 días sin venderse. Armá un combo "Cuaderno + Abrochadora" con 15% de descuento.',
-        financialAdvice: 'Tus egresos ($42,700) representan solo un 8.4% de las ventas. Mantén ese ritmo de control de gastos.',
-      };
+    if (!isRealDataPresent && productsData.length === 0) {
+      productsData = INITIAL_PRODUCTS;
     }
 
-    // Adaptación para tarjetas de la interfaz manteniendo compatibilidad
-    const cards = [
-      {
-        title: 'Resumen General',
-        type: 'success' as const,
-        description: resultData.summary,
-        action: 'Revisar metas de venta semanales.',
-      },
-      {
-        title: 'Productos Estrella',
-        type: 'opportunity' as const,
-        description: resultData.topSellersTips,
-        action: 'Asegurar reposición con proveedor.',
-      },
-      {
-        title: 'Alerta de Stock Estancado',
-        type: 'warning' as const,
-        description: resultData.deadStockAlerts,
-        action: 'Lanzar combo promocional.',
-      },
-      {
-        title: 'Consejo Financiero & Caja',
-        type: 'action' as const,
-        description: resultData.financialAdvice,
-        action: 'Mantener control estricto de egresos.',
-      },
+    const supabaseContextString = `
+[INFORMACIÓN REAL DE LA TIENDA DE PAOLA DESDE SUPABASE]
+- Estado de Datos: ${isRealDataPresent ? 'Datos reales consultados desde Supabase' : 'Datos iniciales de demostración'}
+- Total Productos en Inventario: ${productsData.length}
+- Lista de Productos, Stock y Precios:
+${JSON.stringify(
+  productsData.map((p) => ({
+    nombre: p.name,
+    categoria: p.category,
+    precio: p.price,
+    costo: p.cost,
+    stock: p.stock,
+    min_stock: p.min_stock,
+  })),
+  null,
+  2
+)}
+
+- Historial Reciente de Ventas Registradas:
+${salesData.length > 0 ? JSON.stringify(salesData.slice(0, 10), null, 2) : 'Aún no hay ventas registradas en la base de datos.'}
+
+- Historial Reciente de Egresos/Gastos:
+${expensesData.length > 0 ? JSON.stringify(expensesData.slice(0, 10), null, 2) : 'Aún no hay gastos registrados en la base de datos.'}
+`;
+
+    const systemPrompt = `Eres la asesora de negocios personal de Paola en su tienda minorista (accesorios de celular, librería y golosinas/chucherías).
+Tienes acceso directo a sus métricas e inventario real de Supabase que se adjuntan a continuación.
+
+REGLAS DE INTERACCIÓN:
+1. Responde de forma cálida, cercana, sin tecnicismos y basada en lo que Paola o el usuario pregunte.
+2. Si el usuario te hace un saludo, se presenta (ej. "me llamo Paola") o te hace una charla amigable, responde de manera humana y conversacional, manteniendo el rol de su asesora personal. NO le lances un reporte genérico si no lo pidió.
+3. Si el usuario pregunta sobre métricas, stock, reposición o combos, consulta los datos adjuntos de Supabase y dale respuestas precisas y personalizadas con pasos de acción directos.
+4. Si la base de datos no tiene ventas o productos registrados aún, indícaselo amablemente: "Aún no tienes ventas/productos registrados en tu base de datos".
+
+CONTEXTO DE DATOS SUPABASE:
+${supabaseContextString}
+`;
+
+    const openRouterMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages.map((m: any) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      })),
     ];
 
-    if (isSupabaseConfigured) {
-      await supabaseAdmin.from('ai_insights_cache').insert([
-        {
-          insight_type: 'openrouter_weekly_analysis',
-          content: { ...resultData, cards },
-        },
-      ]);
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://negocio-gestion-web.vercel.app',
+        'X-Title': 'Negocio Gestion Web - Asesora IA',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: openRouterMessages,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('OpenRouter API error response:', errText);
+      return NextResponse.json({ error: `Error en OpenRouter API: ${errText}` }, { status: 500 });
     }
 
+    const data = await response.json();
+    const replyText = data.choices?.[0]?.message?.content || 'No pude procesar la respuesta en este momento.';
+
     return NextResponse.json({
-      summary: resultData.summary,
-      topSellersTips: resultData.topSellersTips,
-      deadStockAlerts: resultData.deadStockAlerts,
-      financialAdvice: resultData.financialAdvice,
-      cards,
-      cached_at: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+      reply: replyText,
+      timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Error en endpoint OpenRouter AI' }, { status: 500 });
+    console.error('Error en /api/ai-insights:', err);
+    return NextResponse.json({ error: err.message || 'Error en endpoint de Asistente IA' }, { status: 500 });
   }
 }

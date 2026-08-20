@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Bot, Send, Sparkles, HelpCircle, Loader2, User } from 'lucide-react';
+import { Bot, Send, HelpCircle, Loader2, User, AlertCircle } from 'lucide-react';
 
 type Message = {
   id: string;
@@ -20,11 +20,12 @@ const PREDEFINED_QUESTIONS = [
 export default function AsistenteIAPage() {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      text: '¡Hola! Soy tu Asesora de Negocios Inteligente. Puedo analizar tus ventas, stock y costos de accesorios, librería y golosinas para darte recomendaciones prácticas en español claro. ¿En qué puedo ayudarte hoy?',
+      text: '¡Hola Paola! Soy tu Asesora de Negocios Inteligente. Tengo acceso directo a tus productos, stock y ventas registradas en tu base de datos. ¿En qué te puedo ayudar hoy?',
       timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -33,6 +34,7 @@ export default function AsistenteIAPage() {
     const query = textToSend || inputMessage;
     if (!query.trim() || loading) return;
 
+    setErrorMessage('');
     const userMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
@@ -40,39 +42,36 @@ export default function AsistenteIAPage() {
       timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     if (!textToSend) setInputMessage('');
     setLoading(true);
 
     try {
-      const res = await fetch('/api/ai-insights', { method: 'POST' });
+      const res = await fetch('/api/ai-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages }),
+      });
+
       const data = await res.json();
 
-      let replyText = '';
-      if (query.includes('reponer')) {
-        replyText = `📌 **Recomendación de Reposición:**\nTe sugiero reponer prioritariamente:\n1. **Vidrio Templado 9D Universal** (quedan 8 unidades y vendiste 29 esta semana).\n2. **Fundas Silicona iPhone** (alta demanda sostenida, repón al menos 15 unidades).\n\n💡 *Tip:* Los accesorios de celular representan tu margen más alto (65%).`;
-      } else if (query.includes('15 días') || query.includes('estancado') || query.includes('combo')) {
-        replyText = `⚠️ **Artículos Estancados Detectados:**\n- **Abrochadora de Bolsillo** (14 días sin salida, $6,650 paralizados).\n- **Set Bolígrafos 4 Colores BIC** (30 unidades en stock).\n\n🎉 **Combo Sugerido para Liquidar:**\nArmá el **"Combo Escolar/Oficina"**: Cuaderno A4 + Abrochadora con **15% de descuento**. Recuperarás efectivo rápido para reinvertir.`;
-      } else if (query.includes('rentable')) {
-        replyText = `📊 **Categoría Más Rentable:**\nSin duda, **Accesorios de Celular** es la categoría más rentable de tu local con un margen promedio del **65%**, seguida por Golosinas que te aporta un volumen constante en la caja diaria.`;
-      } else if (query.includes('margen')) {
-        replyText = `💰 **Cómo Mejorar el Margen de Accesorios:**\n1. Compra vidrios templados al por mayor por pack de 50 unidades para reducir el costo unitario de $500 a $380.\n2. Ofrece la colocación del vidrio templado sin costo adicional para justificar un precio de venta de $2,000.`;
-      } else {
-        replyText = data.summary
-          ? `${data.summary}\n\n💡 **Sugerencia General:** ${data.financialAdvice || data.topSellersTips}`
-          : 'He analizado las métricas de tu local. La tendencia de ventas es positiva, pero te recomiendo enfocar la reposición en accesorios de alta rotación.';
+      if (!res.ok || data.error) {
+        setErrorMessage(data.error || 'Ocurrió un error al comunicarse con la Asesora IA.');
+        return;
       }
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+        text: data.reply || 'No se recibió respuesta del modelo.',
+        timestamp: data.timestamp || new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err) {
-      console.error('Error en conversación con IA:', err);
+    } catch (err: any) {
+      console.error('Error enviando mensaje a Asistente IA:', err);
+      setErrorMessage('Error de conexión al servidor.');
     } finally {
       setLoading(false);
     }
@@ -83,17 +82,17 @@ export default function AsistenteIAPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-          <Bot className="w-8 h-8 text-indigo-400" /> Asesora de Negocios Interactiva
+          <Bot className="w-8 h-8 text-indigo-400" /> Asesora de Negocios Conversacional
         </h1>
         <p className="text-slate-400 text-sm mt-1">
-          Pregúntale lo que quieras sobre tus compras, inventario, márgenes y combos para tu local
+          Respuestas en tiempo real respaldadas por tu base de datos e impulsadas por OpenRouter API
         </p>
       </div>
 
       {/* Predefined Quick Questions */}
       <div className="space-y-2">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-          <HelpCircle className="w-4 h-4 text-indigo-400" /> Preguntas Rápida Sugeridas
+          <HelpCircle className="w-4 h-4 text-indigo-400" /> Preguntas Sugeridas
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {PREDEFINED_QUESTIONS.map((q, idx) => (
@@ -108,6 +107,14 @@ export default function AsistenteIAPage() {
           ))}
         </div>
       </div>
+
+      {/* Error Alert */}
+      {errorMessage && (
+        <div className="bg-rose-500/20 border border-rose-500/50 text-rose-300 p-4 rounded-2xl flex items-center gap-3 text-sm font-semibold">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          {errorMessage}
+        </div>
+      )}
 
       {/* Chat Container */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col h-[520px] justify-between">
@@ -149,7 +156,7 @@ export default function AsistenteIAPage() {
                 <Bot className="w-5 h-5" />
               </div>
               <span className="flex items-center gap-2 bg-slate-800/60 px-4 py-2.5 rounded-2xl border border-slate-700/50">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> Analizando base de datos y preparando recomendación...
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> Consultando Supabase y generando respuesta...
               </span>
             </div>
           )}
@@ -165,7 +172,7 @@ export default function AsistenteIAPage() {
         >
           <input
             type="text"
-            placeholder="Escribe tu consulta sobre stock, proveedores, combos o ganancias..."
+            placeholder="Escribe tu mensaje (ej. 'hola me llamo Paola' o consulta sobre stock)..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             disabled={loading}
