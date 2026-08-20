@@ -1,17 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Product, Expense, supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle } from 'lucide-react';
+import { Product, Expense, Sale, supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+
+type UnifiedMovement = {
+  id: string;
+  type: 'ingreso' | 'egreso';
+  description: string;
+  amount: number;
+  category: string;
+  created_at: string;
+};
 
 export default function CajaPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [activeType, setActiveType] = useState<'ingreso' | 'egreso'>('ingreso');
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Venta Rápida (Ingreso)
   const [saleProductId, setSaleProductId] = useState('');
@@ -25,32 +34,21 @@ export default function CajaPage() {
   const [purchaseProductId, setPurchaseProductId] = useState('');
   const [purchaseQty, setPurchaseQty] = useState(1);
 
-  useEffect(() => {
-    if (isSupabaseConfigured) {
-      supabase.auth.getUser().then(({ data }) => {
-        if (data?.user) setCurrentUser(data.user);
-      });
-    }
-  }, []);
-
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      if (isSupabaseConfigured && currentUser) {
-        // Direct RLS query for instant freshness
-        const [expRes, prodRes] = await Promise.all([
+      if (isSupabaseConfigured) {
+        const [expRes, salesRes, prodRes] = await Promise.all([
           supabase.from('expenses').select('*').order('created_at', { ascending: false }),
+          supabase.from('sales').select('*, sale_items(*, products(*))').order('created_at', { ascending: false }),
           supabase.from('products').select('*').order('name', { ascending: true }),
         ]);
 
         if (expRes.data) setExpenses(expRes.data as any);
+        if (salesRes.data) setSales(salesRes.data as any);
         if (prodRes.data) setProducts(prodRes.data as any);
       } else {
-        // Fallback API Route call
-        const urlExp = currentUser?.id ? `/api/expenses?userId=${currentUser.id}` : '/api/expenses';
-        const urlProd = currentUser?.id ? `/api/inventory?userId=${currentUser.id}` : '/api/inventory';
-
-        const [expRes, prodRes] = await Promise.all([fetch(urlExp), fetch(urlProd)]);
+        const [expRes, prodRes] = await Promise.all([fetch('/api/expenses'), fetch('/api/inventory')]);
         const expData = await expRes.json();
         const prodData = await prodRes.json();
 
@@ -66,7 +64,35 @@ export default function CajaPage() {
 
   useEffect(() => {
     fetchInitialData();
-  }, [currentUser]);
+  }, []);
+
+  // Build unified movements timeline (Sales + Expenses)
+  const unifiedMovements: UnifiedMovement[] = [
+    ...sales.map((s) => {
+      const firstItem = s.sale_items?.[0];
+      const prodName = firstItem?.products?.name || 'Venta de Producto';
+      const qty = firstItem?.quantity || 1;
+      const extraItems = (s.sale_items?.length || 1) - 1;
+      const desc = extraItems > 0 ? `Venta: ${qty}x ${prodName} + ${extraItems} más` : `Venta: ${qty}x ${prodName}`;
+
+      return {
+        id: s.id,
+        type: 'ingreso' as const,
+        description: desc,
+        amount: Number(s.total_amount || 0),
+        category: s.payment_method || 'Venta',
+        created_at: s.created_at,
+      };
+    }),
+    ...expenses.map((e) => ({
+      id: e.id,
+      type: 'egreso' as const,
+      description: e.description,
+      amount: Number(e.amount || 0),
+      category: e.category,
+      created_at: e.created_at,
+    })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const handleQuickSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +108,6 @@ export default function CajaPage() {
     try {
       const payload = {
         payment_method: paymentMethod,
-        user_id: currentUser?.id || undefined,
         items: [
           {
             product_id: product.id,
@@ -109,7 +134,6 @@ export default function CajaPage() {
       setSaleProductId('');
       setSaleQty(1);
 
-      // Instant refresh of inventory and movements
       await fetchInitialData();
     } catch (err: any) {
       console.error('Error registrando venta:', err);
@@ -133,7 +157,6 @@ export default function CajaPage() {
         category: expenseCategory,
         product_id: expenseCategory === 'mercaderia' ? purchaseProductId || undefined : undefined,
         quantity_purchased: expenseCategory === 'mercaderia' ? Number(purchaseQty) : undefined,
-        user_id: currentUser?.id || undefined,
       };
 
       const res = await fetch('/api/expenses', {
@@ -154,12 +177,6 @@ export default function CajaPage() {
         : '';
 
       setToastMessage({ type: 'success', text: `✅ Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado${stockMsg}` });
-
-      // Optimistic local state insert for zero delay UI update
-      if (data.expense) {
-        setExpenses((prev) => [data.expense, ...prev]);
-      }
-
       setExpenseDesc('');
       setExpenseAmount('');
       setPurchaseProductId('');
@@ -270,19 +287,29 @@ export default function CajaPage() {
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                 1. Seleccionar Producto *
               </label>
-              <select
-                required
-                value={saleProductId}
-                onChange={(e) => setSaleProductId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">-- Selecciona producto vendido --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (${(p.sale_price ?? p.price ?? 0).toLocaleString('es-AR')}) - Stock: {p.stock} u.
-                  </option>
-                ))}
-              </select>
+
+              {products.length === 0 ? (
+                <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl text-slate-400 text-sm">
+                  ⚠️ No tienes productos cargados aún. Agrega uno primero en la sección <span className="text-indigo-400 font-bold">Inventario</span>.
+                </div>
+              ) : (
+                <select
+                  required
+                  value={saleProductId}
+                  onChange={(e) => setSaleProductId(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">-- Selecciona producto vendido --</option>
+                  {products.map((p) => {
+                    const price = p.sale_price ?? p.price ?? 0;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} - ${price.toLocaleString('es-AR')} (Stock: {p.stock} u.)
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -439,37 +466,55 @@ export default function CajaPage() {
         </div>
       )}
 
-      {/* History List */}
+      {/* Unified Movimientos Timeline List */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
-        <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3">Historial de Salidas Registradas</h3>
+        <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3 flex items-center justify-between">
+          <span>Historial de Movimientos de Caja</span>
+          <span className="text-xs font-medium text-slate-400">Ingresos (+) y Egresos (-)</span>
+        </h3>
+
         {loading ? (
           <div className="flex justify-center py-8 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
           </div>
-        ) : expenses.length === 0 ? (
-          <div className="text-center py-8 text-slate-500 text-sm">No hay egresos registrados aún.</div>
+        ) : unifiedMovements.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">No hay movimientos de caja registrados aún.</div>
         ) : (
-          <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-            {expenses.map((exp) => (
-              <div key={exp.id} className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-                <div className="space-y-1">
-                  <h4 className="font-bold text-white text-base">{exp.description}</h4>
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span className="bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-md font-semibold border border-amber-500/20 uppercase">
-                      {exp.category}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {new Date(exp.created_at).toLocaleDateString('es-AR')}
-                    </span>
+          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+            {unifiedMovements.map((mov) => (
+              <div key={mov.id} className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`p-2.5 rounded-xl text-white ${
+                      mov.type === 'ingreso' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                    }`}
+                  >
+                    {mov.type === 'ingreso' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <h4 className="font-bold text-white text-base">{mov.description}</h4>
+                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                      <span className="bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-md font-semibold border border-slate-700 uppercase">
+                        {mov.category}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {new Date(mov.created_at).toLocaleDateString('es-AR')}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className="font-extrabold text-rose-400 text-lg">-${Number(exp.amount).toLocaleString('es-AR')}</span>
-                  <button onClick={() => handleDeleteExpense(exp.id)} className="text-slate-500 hover:text-rose-400 p-2">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <span className={`font-extrabold text-lg ${mov.type === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {mov.type === 'ingreso' ? '+' : '-'}${mov.amount.toLocaleString('es-AR')}
+                  </span>
+                  {mov.type === 'egreso' && (
+                    <button onClick={() => handleDeleteExpense(mov.id)} className="text-slate-500 hover:text-rose-400 p-2">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

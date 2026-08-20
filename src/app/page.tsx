@@ -8,7 +8,9 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 export default function DashboardPage() {
   const [period, setPeriod] = useState<'7d' | '1m' | '3m'>('7d');
   const [loading, setLoading] = useState(true);
+
   const [sales, setSales] = useState<any[]>([]);
+  const [saleItems, setSaleItems] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
 
@@ -17,13 +19,15 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         if (isSupabaseConfigured) {
-          const [salesRes, expRes, prodRes] = await Promise.all([
-            supabase.from('sales').select('*, sale_items(*)'),
+          const [salesRes, itemsRes, expRes, prodRes] = await Promise.all([
+            supabase.from('sales').select('*'),
+            supabase.from('sale_items').select('*'),
             supabase.from('expenses').select('*'),
             supabase.from('products').select('*'),
           ]);
 
           if (salesRes.data) setSales(salesRes.data);
+          if (itemsRes.data) setSaleItems(itemsRes.data);
           if (expRes.data) setExpenses(expRes.data);
           if (prodRes.data) setProducts(prodRes.data);
         } else {
@@ -33,11 +37,12 @@ export default function DashboardPage() {
           ]);
           const expData = await expRes.json();
           const prodData = await prodRes.json();
+
           setExpenses(expData.expenses || []);
           setProducts(prodData.products || []);
         }
       } catch (err) {
-        console.error('Error cargando métricas:', err);
+        console.error('Error cargando métricas en tiempo real:', err);
       } finally {
         setLoading(false);
       }
@@ -46,20 +51,31 @@ export default function DashboardPage() {
     loadMetrics();
   }, []);
 
-  // Calculate KPIs
+  // 1. Facturación Total (sum total_amount in sales)
   const totalFacturacion = sales.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
-  const totalEgresos = expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
-  const totalGanancia = totalFacturacion - totalEgresos;
 
-  // Dinero Parado (Stock * Costo)
+  // 2. Total Gastos (sum amount in expenses)
+  const totalGastos = expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
+
+  // 3. Ganancia Neta Real (sum (unit_price - unit_cost) * quantity)
+  const gananciaNetaReal = saleItems.length > 0
+    ? saleItems.reduce((acc, item) => {
+        const price = Number(item.unit_price || 0);
+        const cost = Number(item.unit_cost || 0);
+        const qty = Number(item.quantity || 1);
+        return acc + (price - cost) * qty;
+      }, 0)
+    : Math.max(0, totalFacturacion - totalGastos);
+
+  // 4. Dinero Parado (sum cost_price * stock in products)
   const deadStockValue = products.reduce((acc, p) => {
     const cost = p.cost_price ?? p.cost ?? 0;
     return acc + cost * (p.stock || 0);
   }, 0);
 
-  // Margen Promedio (%)
+  // Margen Promedio Real (%)
   const margenPromedio = totalFacturacion > 0
-    ? ((totalGanancia / totalFacturacion) * 100).toFixed(1)
+    ? ((gananciaNetaReal / totalFacturacion) * 100).toFixed(1)
     : '0.0';
 
   const hasData = sales.length > 0 || expenses.length > 0 || products.length > 0;
@@ -70,7 +86,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Dashboard & Métricas</h1>
-          <p className="text-slate-400 text-sm mt-1">Resumen financiero en tiempo real, control de margen e inventario</p>
+          <p className="text-slate-400 text-sm mt-1">Métricas calculadas en vivo con datos reales de tu base Supabase</p>
         </div>
 
         <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl gap-1 self-start sm:self-auto">
@@ -104,7 +120,7 @@ export default function DashboardPage() {
 
       {/* KPI Cards Section */}
       {loading ? (
-        <div className="flex justify-center py-16 text-slate-400">
+        <div className="flex justify-center py-20 text-slate-400">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
         </div>
       ) : (
@@ -118,18 +134,29 @@ export default function DashboardPage() {
             </div>
             <div className="text-3xl font-extrabold text-white">${totalFacturacion.toLocaleString('es-AR')}</div>
             <p className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-              <ArrowUpRight className="w-4 h-4" /> Ingresos brutos en tiempo real
+              <ArrowUpRight className="w-4 h-4" /> Suma total de ventas
             </p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Total Egresos / Gastos</span>
-              <div className="bg-amber-500/10 p-2.5 rounded-2xl text-amber-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Ganancia Neta Real</span>
+              <div className="bg-emerald-500/10 p-2.5 rounded-2xl text-emerald-400">
                 <TrendingUp className="w-5 h-5" />
               </div>
             </div>
-            <div className="text-3xl font-extrabold text-amber-400">${totalEgresos.toLocaleString('es-AR')}</div>
+            <div className="text-3xl font-extrabold text-emerald-400">${gananciaNetaReal.toLocaleString('es-AR')}</div>
+            <p className="text-xs text-emerald-400/80 font-medium">Margen real (Venta - Costo)</p>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Total Gastos / Egresos</span>
+              <div className="bg-amber-500/10 p-2.5 rounded-2xl text-amber-400">
+                <TrendingUp className="w-5 h-5 rotate-180" />
+              </div>
+            </div>
+            <div className="text-3xl font-extrabold text-amber-400">${totalGastos.toLocaleString('es-AR')}</div>
             <p className="text-xs text-amber-400/80 font-medium">Salidas de caja registradas</p>
           </div>
 
@@ -141,18 +168,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="text-3xl font-extrabold text-rose-400">${deadStockValue.toLocaleString('es-AR')}</div>
-            <p className="text-xs text-rose-400/80 font-medium">Valor total en inventario</p>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl space-y-3">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Margen Promedio</span>
-              <div className="bg-emerald-500/10 p-2.5 rounded-2xl text-emerald-400">
-                <Percent className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-extrabold text-emerald-400">{margenPromedio}%</div>
-            <p className="text-xs text-slate-400 font-medium">Rentabilidad sobre ventas</p>
+            <p className="text-xs text-rose-400/80 font-medium">Valor invertido en inventario</p>
           </div>
         </div>
       )}
@@ -164,9 +180,9 @@ export default function DashboardPage() {
             <Inbox className="w-8 h-8" />
           </div>
           <div className="space-y-1 max-w-md mx-auto">
-            <h3 className="text-xl font-bold text-white">Sin movimientos aún</h3>
+            <h3 className="text-xl font-bold text-white">Sin movimientos registrados aún</h3>
             <p className="text-slate-400 text-sm">
-              Registra tu primer producto en inventario o carga un movimiento de caja para comenzar a ver métricas de rentabilidad.
+              Carga tu primer producto en inventario o registra un movimiento en caja para calcular tus métricas en tiempo real.
             </p>
           </div>
           <div className="pt-2">
