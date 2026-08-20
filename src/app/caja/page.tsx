@@ -28,6 +28,7 @@ export default function CajaPage() {
   const [submitting, setSubmitting] = useState(false);
   const [activeType, setActiveType] = useState<'ingreso' | 'egreso'>('ingreso');
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Venta Rápida (Ingreso)
   const [saleProductId, setSaleProductId] = useState('');
@@ -41,6 +42,14 @@ export default function CajaPage() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [purchaseProductId, setPurchaseProductId] = useState('');
   const [purchaseQty, setPurchaseQty] = useState(1);
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setCurrentUser(data.user);
+      });
+    }
+  }, []);
 
   const fetchInitialData = async () => {
     try {
@@ -72,7 +81,7 @@ export default function CajaPage() {
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!customDescMode) {
@@ -133,32 +142,80 @@ export default function CajaPage() {
     setToastMessage(null);
     setSubmitting(true);
 
-    const unitPrice = selectedSaleProduct.sale_price ?? selectedSaleProduct.price ?? 0;
-    const unitCost = selectedSaleProduct.cost_price ?? selectedSaleProduct.cost ?? 0;
-
     try {
-      const payload = {
-        payment_method: paymentMethod,
-        items: [
+      // 1. Guaranteed authentication check
+      let activeUserId = currentUser?.id;
+      if (isSupabaseConfigured && !activeUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (!authData?.user) {
+          throw new Error('No hay sesión activa. Inicia sesión nuevamente.');
+        }
+        activeUserId = authData.user.id;
+        setCurrentUser(authData.user);
+      }
+
+      const unitPrice = selectedSaleProduct.sale_price ?? selectedSaleProduct.price ?? 0;
+      const unitCost = selectedSaleProduct.cost_price ?? selectedSaleProduct.cost ?? 0;
+      const totalAmount = unitPrice * Number(saleQty);
+
+      if (isSupabaseConfigured && activeUserId) {
+        // Direct Supabase insert with explicit user_id on sales header
+        const { data: saleData, error: saleError } = await supabase
+          .from('sales')
+          .insert([
+            {
+              user_id: activeUserId,
+              total_amount: totalAmount,
+              payment_method: paymentMethod,
+              notes: null,
+            },
+          ])
+          .select()
+          .single();
+
+        if (saleError) throw saleError;
+
+        // Insert Sale Items
+        const { error: itemsError } = await supabase.from('sale_items').insert([
           {
+            sale_id: saleData.id,
             product_id: selectedSaleProduct.id,
             quantity: Number(saleQty),
             unit_price: unitPrice,
             unit_cost: unitCost,
           },
-        ],
-      };
+        ]);
 
-      const res = await fetch('/api/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+        if (itemsError) throw itemsError;
 
-      const data = await res.json();
+        // Decrement stock in products table safely
+        const newStock = Math.max(0, availableStock - Number(saleQty));
+        await supabase.from('products').update({ stock: newStock }).eq('id', selectedSaleProduct.id).eq('user_id', activeUserId);
+      } else {
+        // API Route fallback with explicit user_id payload
+        const payload = {
+          payment_method: paymentMethod,
+          user_id: activeUserId || undefined,
+          items: [
+            {
+              product_id: selectedSaleProduct.id,
+              quantity: Number(saleQty),
+              unit_price: unitPrice,
+              unit_cost: unitCost,
+            },
+          ],
+        };
 
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'No se pudo completar la venta.');
+        const res = await fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'No se pudo completar la venta.');
+        }
       }
 
       setToastMessage({ type: 'success', text: `✅ Venta registrada y stock actualizado (-${saleQty} u. en ${selectedSaleProduct.name})` });
@@ -182,32 +239,69 @@ export default function CajaPage() {
     setSubmitting(true);
 
     try {
-      const payload = {
-        description: expenseDesc.trim(),
-        amount: parseFloat(expenseAmount),
-        category: expenseCategory,
-        product_id: expenseCategory === 'mercaderia' ? purchaseProductId || undefined : undefined,
-        quantity_purchased: expenseCategory === 'mercaderia' ? Number(purchaseQty) : undefined,
-      };
-
-      const res = await fetch('/api/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'No se pudo guardar el egreso.');
+      // Guaranteed authentication check for expenses
+      let activeUserId = currentUser?.id;
+      if (isSupabaseConfigured && !activeUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (!authData?.user) {
+          throw new Error('No hay sesión activa. Inicia sesión nuevamente.');
+        }
+        activeUserId = authData.user.id;
+        setCurrentUser(authData.user);
       }
 
+      const parsedAmount = parseFloat(expenseAmount);
+      const parsedQty = Number(purchaseQty);
       const selectedProd = products.find((p) => p.id === purchaseProductId);
+
+      if (isSupabaseConfigured && activeUserId) {
+        const expensePayload: any = {
+          user_id: activeUserId,
+          description: expenseDesc.trim(),
+          amount: parsedAmount,
+          category: expenseCategory,
+        };
+
+        if (expenseCategory === 'mercaderia' && purchaseProductId) {
+          expensePayload.product_id = purchaseProductId;
+          expensePayload.quantity_purchased = parsedQty > 0 ? parsedQty : 1;
+        }
+
+        const { error: expError } = await supabase.from('expenses').insert([expensePayload]);
+        if (expError) throw expError;
+
+        // Increment stock if mercaderia and product attached
+        if (expenseCategory === 'mercaderia' && selectedProd && parsedQty > 0) {
+          const newStock = (selectedProd.stock || 0) + parsedQty;
+          await supabase.from('products').update({ stock: newStock }).eq('id', selectedProd.id).eq('user_id', activeUserId);
+        }
+      } else {
+        const payload = {
+          description: expenseDesc.trim(),
+          amount: parsedAmount,
+          category: expenseCategory,
+          product_id: expenseCategory === 'mercaderia' ? purchaseProductId || undefined : undefined,
+          quantity_purchased: expenseCategory === 'mercaderia' ? parsedQty : undefined,
+          user_id: activeUserId || undefined,
+        };
+
+        const res = await fetch('/api/expenses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'No se pudo guardar el egreso.');
+        }
+      }
+
       const stockMsg = expenseCategory === 'mercaderia' && selectedProd && purchaseQty > 0
         ? ` (+${purchaseQty} u. sumadas a ${selectedProd.name})`
         : '';
 
-      setToastMessage({ type: 'success', text: `✅ Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado${stockMsg}` });
+      setToastMessage({ type: 'success', text: `✅ Egreso de $${parsedAmount.toLocaleString('es-AR')} guardado${stockMsg}` });
       setExpenseAmount('');
       setPurchaseProductId('');
       setPurchaseQty(1);
@@ -258,7 +352,7 @@ export default function CajaPage() {
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
           <Wallet className="w-8 h-8 text-violet-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Carga rápida con botones vibrantes y gradientes (ARS, $)</p>
+        <p className="text-slate-400 text-sm mt-1">Carga rápida con validación garantizada de usuario autenticado (ARS, $)</p>
       </div>
 
       {/* Top Giant Action Selector */}
