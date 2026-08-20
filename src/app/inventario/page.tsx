@@ -14,7 +14,6 @@ const CATEGORIES = [
   'Varios / Otros',
 ];
 
-// Helper icon & color badge for categories
 function CategoryBadge({ category }: { category: string }) {
   switch (category) {
     case 'Accesorios Celular':
@@ -72,6 +71,7 @@ export default function InventarioPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -82,6 +82,14 @@ export default function InventarioPage() {
     stock: '',
     min_stock: '5',
   });
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setCurrentUser(data.user);
+      });
+    }
+  }, []);
 
   const fetchProducts = async () => {
     try {
@@ -104,7 +112,7 @@ export default function InventarioPage() {
 
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, [currentUser]);
 
   const handleOpenModal = (product?: Product) => {
     setToastMessage(null);
@@ -141,6 +149,16 @@ export default function InventarioPage() {
     setSubmitting(true);
 
     try {
+      // 1. Obtain user session guaranteed if using client
+      let activeUserId = currentUser?.id;
+      if (isSupabaseConfigured && !activeUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          activeUserId = authData.user.id;
+          setCurrentUser(authData.user);
+        }
+      }
+
       const parsedCost = parseFloat(formData.cost_price || '0');
       const parsedSale = parseFloat(formData.sale_price || '0');
       const parsedStock = parseInt(formData.stock || '0', 10);
@@ -151,8 +169,7 @@ export default function InventarioPage() {
           ? formData.custom_category.trim()
           : formData.category;
 
-      const payload = {
-        id: editingProduct ? editingProduct.id : undefined,
+      const productPayload: any = {
         name: formData.name.trim(),
         category: finalCategory,
         cost_price: isNaN(parsedCost) ? 0 : parsedCost,
@@ -161,21 +178,42 @@ export default function InventarioPage() {
         min_stock: isNaN(parsedMinStock) ? 5 : parsedMinStock,
       };
 
-      const res = await fetch('/api/inventory', {
-        method: editingProduct ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      if (activeUserId) {
+        productPayload.user_id = activeUserId;
+      }
 
-      const data = await res.json();
+      // Perform insertion/update via Supabase client or API Route with explicit user_id
+      if (isSupabaseConfigured && activeUserId) {
+        if (editingProduct) {
+          const { error } = await supabase
+            .from('products')
+            .update(productPayload)
+            .eq('id', editingProduct.id)
+            .eq('user_id', activeUserId);
 
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Ocurrió un error al guardar el producto');
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('products')
+            .insert([productPayload]);
+
+          if (error) throw error;
+        }
+      } else {
+        // Fallback API route call
+        const payload = editingProduct ? { ...productPayload, id: editingProduct.id } : productPayload;
+        const res = await fetch('/api/inventory', {
+          method: editingProduct ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Ocurrió un error al guardar el producto');
       }
 
       setToastMessage({
         type: 'success',
-        text: editingProduct ? '✅ Producto actualizado correctamente' : '✅ Producto guardado correctamente',
+        text: editingProduct ? '✅ Producto actualizado correctamente' : '✅ Producto agregado correctamente',
       });
 
       setIsModalOpen(false);
@@ -193,12 +231,17 @@ export default function InventarioPage() {
     setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, stock: newStock } : p)));
 
     try {
-      const res = await fetch('/api/inventory', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...product, stock: newStock }),
-      });
-      if (!res.ok) throw new Error('Error al actualizar el stock');
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', product.id);
+        if (error) throw error;
+      } else {
+        const res = await fetch('/api/inventory', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...product, stock: newStock }),
+        });
+        if (!res.ok) throw new Error('Error al actualizar el stock');
+      }
     } catch (err) {
       console.error('Error ajustando stock:', err);
       fetchProducts();
@@ -209,9 +252,14 @@ export default function InventarioPage() {
     if (!confirm('¿Estás seguro de eliminar este producto del inventario?')) return;
 
     try {
-      const res = await fetch(`/api/inventory?id=${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'No se pudo eliminar');
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('products').delete().eq('id', id);
+        if (error) throw error;
+      } else {
+        const res = await fetch(`/api/inventory?id=${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'No se pudo eliminar');
+      }
 
       setToastMessage({ type: 'success', text: '✅ Producto eliminado' });
       await fetchProducts();
@@ -264,7 +312,7 @@ export default function InventarioPage() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all text-sm"
+          className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg shadow-violet-500/25 transition-all text-sm"
         >
           <Plus className="w-5 h-5" /> Agregar Producto
         </button>
@@ -314,7 +362,7 @@ export default function InventarioPage() {
             </div>
             <button
               onClick={() => handleOpenModal()}
-              className="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold px-5 py-3 rounded-2xl text-sm"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold px-5 py-3 rounded-2xl text-sm shadow-lg shadow-violet-500/25"
             >
               <Plus className="w-4 h-4" /> ➕ Agregar tu primer producto
             </button>
@@ -338,7 +386,6 @@ export default function InventarioPage() {
                   const price = p.sale_price ?? p.price ?? 0;
                   const marginPct = cost > 0 ? (((price - cost) / cost) * 100).toFixed(1) : '0.0';
 
-                  // Stock Status Indicators
                   const isOutOfStock = p.stock <= 0;
                   const isLowStock = !isOutOfStock && p.stock <= p.min_stock;
 
@@ -357,7 +404,6 @@ export default function InventarioPage() {
                       </td>
                       <td className="p-4">
                         <div className="space-y-1">
-                          {/* Stock Status Badge */}
                           {isOutOfStock ? (
                             <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg flex items-center gap-1 w-fit animate-pulse">
                               🔴 AGOTADO (0 u.)
@@ -372,7 +418,6 @@ export default function InventarioPage() {
                             </span>
                           )}
 
-                          {/* Quick Stock Controls */}
                           <div className="flex items-center gap-2 pt-1">
                             <button
                               onClick={() => handleQuickStockAdjust(p, -1)}
@@ -547,7 +592,7 @@ export default function InventarioPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-lg shadow-indigo-600/30 flex items-center gap-2"
+                  className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-lg shadow-violet-500/25 flex items-center gap-2"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? 'Guardando...' : 'Guardar Producto'}
