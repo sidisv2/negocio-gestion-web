@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Product } from '@/lib/supabase';
-import { Plus, Search, AlertTriangle, CheckCircle2, Loader2, ShoppingBag, Truck, Sliders } from 'lucide-react';
+import { Plus, Search, AlertTriangle, CheckCircle2, Loader2, ShoppingBag, Truck, Inbox } from 'lucide-react';
 
 export default function InventarioGestionPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -20,7 +20,7 @@ export default function InventarioGestionPage() {
   // Form Compra Mercadería / Gasto
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
-  const [expenseCat, setExpenseCat] = useState('Proveedor');
+  const [expenseCat, setExpenseCat] = useState('Mercadería');
 
   // Form Nuevo Producto Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -39,7 +39,7 @@ export default function InventarioGestionPage() {
       setLoading(true);
       const res = await fetch(`/api/inventory?category=${categoryFilter}&search=${search}`);
       const data = await res.json();
-      if (data.products) setProducts(data.products);
+      setProducts(data.products || []);
     } catch (err) {
       console.error('Error cargando inventario:', err);
     } finally {
@@ -140,23 +140,23 @@ export default function InventarioGestionPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Inventario & Registro Rápido</h1>
-          <p className="text-slate-400 text-sm mt-1">Carga sencilla de ventas diarias, compras a proveedores y ajuste de stock</p>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Inventario & Control</h1>
+          <p className="text-slate-400 text-sm mt-1">Carga sencilla de productos, compras a proveedores y ajuste de stock</p>
         </div>
 
         <button
           onClick={() => setShowAddModal(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3 rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all self-start sm:self-auto"
+          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3.5 rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all self-start sm:self-auto text-sm"
         >
-          <Plus className="w-5 h-5" /> Nuevo Producto
+          <Plus className="w-5 h-5" /> Agregar Tu Primer Producto
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 gap-2">
+      <div className="flex border-b border-slate-800 gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setActiveTab('inventario')}
-          className={`pb-3 px-4 font-bold text-sm transition-all border-b-2 ${
+          className={`pb-3 px-4 font-bold text-sm whitespace-nowrap transition-all border-b-2 ${
             activeTab === 'inventario'
               ? 'border-indigo-500 text-white'
               : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -166,7 +166,7 @@ export default function InventarioGestionPage() {
         </button>
         <button
           onClick={() => setActiveTab('registrar_venta')}
-          className={`pb-3 px-4 font-bold text-sm transition-all border-b-2 flex items-center gap-1.5 ${
+          className={`pb-3 px-4 font-bold text-sm whitespace-nowrap transition-all border-b-2 flex items-center gap-1.5 ${
             activeTab === 'registrar_venta'
               ? 'border-emerald-500 text-emerald-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -176,7 +176,7 @@ export default function InventarioGestionPage() {
         </button>
         <button
           onClick={() => setActiveTab('registrar_compra')}
-          className={`pb-3 px-4 font-bold text-sm transition-all border-b-2 flex items-center gap-1.5 ${
+          className={`pb-3 px-4 font-bold text-sm whitespace-nowrap transition-all border-b-2 flex items-center gap-1.5 ${
             activeTab === 'registrar_compra'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -186,10 +186,10 @@ export default function InventarioGestionPage() {
         </button>
       </div>
 
-      {/* Success Notification */}
+      {/* Success Banner */}
       {successMsg && (
-        <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 font-semibold animate-pulse">
-          <CheckCircle2 className="w-6 h-6 shrink-0" />
+        <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 font-semibold animate-pulse text-sm">
+          <CheckCircle2 className="w-5 h-5 shrink-0" />
           {successMsg}
         </div>
       )}
@@ -202,7 +202,7 @@ export default function InventarioGestionPage() {
               <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar por código de barra o nombre..."
+                placeholder="Buscar producto por nombre o código..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -225,6 +225,22 @@ export default function InventarioGestionPage() {
             {loading ? (
               <div className="flex items-center justify-center py-16 text-slate-400">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-12 px-4 space-y-3">
+                <div className="w-14 h-14 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto border border-indigo-500/20">
+                  <Inbox className="w-7 h-7" />
+                </div>
+                <h3 className="font-bold text-white text-lg">No hay productos registrados</h3>
+                <p className="text-slate-400 text-xs max-w-sm mx-auto">
+                  Agrega tu primer producto para llevar el control del stock y calcular tus ganancias reales.
+                </p>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3 rounded-2xl shadow-lg shadow-indigo-600/30 text-xs inline-flex items-center gap-2 mt-2"
+                >
+                  <Plus className="w-4 h-4" /> Agregar Tu Primer Producto
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -292,45 +308,51 @@ export default function InventarioGestionPage() {
             <ShoppingBag className="w-5 h-5 text-emerald-400" /> Registrar Venta Rápida del Día
           </h2>
 
-          <form onSubmit={handleQuickSaleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Seleccionar Producto</label>
-              <select
-                required
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          {products.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-sm">
+              Primero debes agregar productos en el inventario para poder cargar ventas.
+            </div>
+          ) : (
+            <form onSubmit={handleQuickSaleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Seleccionar Producto</label>
+                <select
+                  required
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">-- Elige un producto --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (${p.price.toLocaleString('es-AR')}) - Stock: {p.stock}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Cantidad Vendida</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={saleQuantity}
+                  onChange={(e) => setSaleQuantity(Number(e.target.value))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-white font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting || !selectedProductId}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 transition-all text-base flex items-center justify-center gap-2"
               >
-                <option value="">-- Elige un producto --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (${p.price.toLocaleString('es-AR')}) - Stock: {p.stock}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Cantidad Vendida</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={saleQuantity}
-                onChange={(e) => setSaleQuantity(Number(e.target.value))}
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-white font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting || !selectedProductId}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 transition-all text-base flex items-center justify-center gap-2"
-            >
-              {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-              {submitting ? 'Guardando Venta...' : 'Confirmar & Descontar Stock'}
-            </button>
-          </form>
+                {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
+                {submitting ? 'Guardando Venta...' : 'Confirmar & Descontar Stock'}
+              </button>
+            </form>
+          )}
         </div>
       )}
 
@@ -374,10 +396,10 @@ export default function InventarioGestionPage() {
                   onChange={(e) => setExpenseCat(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-3 py-3 text-white font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="Proveedor">Proveedor</option>
+                  <option value="Mercadería">Mercadería</option>
                   <option value="Servicios">Servicios</option>
-                  <option value="Retiro de Caja">Retiro de Caja</option>
-                  <option value="Gasto General">Gasto General</option>
+                  <option value="Alquiler">Alquiler</option>
+                  <option value="Varios">Varios</option>
                 </select>
               </div>
             </div>
@@ -405,6 +427,7 @@ export default function InventarioGestionPage() {
                 <input
                   type="text"
                   required
+                  placeholder="Ej. Funda Silicona iPhone"
                   value={newProduct.name}
                   onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -416,6 +439,7 @@ export default function InventarioGestionPage() {
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Código de Barras</label>
                   <input
                     type="text"
+                    placeholder="Opcional"
                     value={newProduct.barcode}
                     onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"

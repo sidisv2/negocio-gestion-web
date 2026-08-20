@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Bot, Send, HelpCircle, Loader2, User, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Bot, Send, HelpCircle, Loader2, User, Trash2 } from 'lucide-react';
 
 type Message = {
   id: string;
@@ -17,24 +17,55 @@ const PREDEFINED_QUESTIONS = [
   '¿Cómo puedo mejorar el margen de los accesorios de celular?',
 ];
 
+const INITIAL_WELCOME: Message = {
+  id: 'welcome',
+  sender: 'assistant',
+  text: '¡Hola Paola! Soy tu Asesora de Negocios Inteligente. Tengo acceso directo a tus productos, stock y ventas registradas en tu base de datos. ¿En qué te puedo ayudar hoy?',
+  timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+};
+
 export default function AsistenteIAPage() {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      sender: 'assistant',
-      text: '¡Hola Paola! Soy tu Asesora de Negocios Inteligente. Tengo acceso directo a tus productos, stock y ventas registradas en tu base de datos. ¿En qué te puedo ayudar hoy?',
-      timestamp: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([INITIAL_WELCOME]);
+
+  // Load chat history from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('negocio_ai_chat_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      }
+    } catch (e) {
+      console.error('Error cargando historial de chat:', e);
+    }
+  }, []);
+
+  // Save chat history to localStorage on change
+  useEffect(() => {
+    try {
+      if (messages.length > 0) {
+        localStorage.setItem('negocio_ai_chat_history', JSON.stringify(messages));
+      }
+    } catch (e) {
+      console.error('Error guardando historial de chat:', e);
+    }
+  }, [messages]);
+
+  const handleClearChat = () => {
+    if (confirm('¿Deseas iniciar una nueva conversación y borrar el historial?')) {
+      setMessages([INITIAL_WELCOME]);
+      localStorage.removeItem('negocio_ai_chat_history');
+    }
+  };
 
   const handleSendMessage = async (textToSend?: string) => {
     const query = textToSend || inputMessage;
     if (!query.trim() || loading) return;
 
-    setErrorMessage('');
     const userMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
@@ -56,22 +87,16 @@ export default function AsistenteIAPage() {
 
       const data = await res.json();
 
-      if (!res.ok || data.error) {
-        setErrorMessage(data.error || 'Ocurrió un error al comunicarse con la Asesora IA.');
-        return;
-      }
-
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
-        text: data.reply || 'No se recibió respuesta del modelo.',
+        text: data.reply || 'No pude procesar la respuesta en este momento.',
         timestamp: data.timestamp || new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
       console.error('Error enviando mensaje a Asistente IA:', err);
-      setErrorMessage('Error de conexión al servidor.');
     } finally {
       setLoading(false);
     }
@@ -80,13 +105,22 @@ export default function AsistenteIAPage() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-          <Bot className="w-8 h-8 text-indigo-400" /> Asesora de Negocios Conversacional
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Respuestas en tiempo real respaldadas por tu base de datos e impulsadas por OpenRouter API
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+            <Bot className="w-8 h-8 text-indigo-400" /> Asesora de Negocios Conversacional
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Historial guardado automáticamente & respaldado por tu base de datos Supabase
+          </p>
+        </div>
+
+        <button
+          onClick={handleClearChat}
+          className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-bold px-4 py-2.5 rounded-2xl flex items-center gap-2 transition-all self-start sm:self-auto"
+        >
+          <Trash2 className="w-4 h-4 text-rose-400" /> Nueva Conversación
+        </button>
       </div>
 
       {/* Predefined Quick Questions */}
@@ -107,14 +141,6 @@ export default function AsistenteIAPage() {
           ))}
         </div>
       </div>
-
-      {/* Error Alert */}
-      {errorMessage && (
-        <div className="bg-rose-500/20 border border-rose-500/50 text-rose-300 p-4 rounded-2xl flex items-center gap-3 text-sm font-semibold">
-          <AlertCircle className="w-5 h-5 shrink-0" />
-          {errorMessage}
-        </div>
-      )}
 
       {/* Chat Container */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col h-[520px] justify-between">
@@ -156,7 +182,7 @@ export default function AsistenteIAPage() {
                 <Bot className="w-5 h-5" />
               </div>
               <span className="flex items-center gap-2 bg-slate-800/60 px-4 py-2.5 rounded-2xl border border-slate-700/50">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> Consultando Supabase y generando respuesta...
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> Analizando base de datos y preparando respuesta...
               </span>
             </div>
           )}
@@ -172,7 +198,7 @@ export default function AsistenteIAPage() {
         >
           <input
             type="text"
-            placeholder="Escribe tu mensaje (ej. 'hola me llamo Paola' o consulta sobre stock)..."
+            placeholder="Escribe tu mensaje o duda sobre el negocio..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             disabled={loading}

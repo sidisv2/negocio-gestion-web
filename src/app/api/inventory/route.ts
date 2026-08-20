@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, supabaseAdmin, Product } from '@/lib/supabase';
-import { INITIAL_PRODUCTS } from '@/lib/mockData';
 
-// Global in-memory storage for local demo fallback
-let localProducts: Product[] = [...INITIAL_PRODUCTS];
+// In-memory fallback array initialized EMPTY (No hardcoded mock items)
+let localProducts: Product[] = [];
 
 export async function GET(request: Request) {
   try {
@@ -24,10 +23,10 @@ export async function GET(request: Request) {
       const { data, error } = await query;
       if (error) throw error;
 
-      return NextResponse.json({ products: data, source: 'supabase' });
+      return NextResponse.json({ products: data || [] });
     }
 
-    // Fallback in-memory query
+    // In-memory fallback
     let filtered = localProducts;
     if (category && category !== 'Todas') {
       filtered = filtered.filter((p) => p.category === category);
@@ -37,7 +36,7 @@ export async function GET(request: Request) {
       filtered = filtered.filter((p) => p.name.toLowerCase().includes(q) || p.barcode.includes(q));
     }
 
-    return NextResponse.json({ products: filtered, source: 'demo_fallback' });
+    return NextResponse.json({ products: filtered });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Error fetching inventory' }, { status: 500 });
   }
@@ -49,7 +48,7 @@ export async function POST(request: Request) {
     const { barcode, name, category, cost, price, stock, min_stock } = body;
 
     if (!name || price === undefined) {
-      return NextResponse.json({ error: 'Faltan campos obligatorios (nombre, precio)' }, { status: 400 });
+      return NextResponse.json({ error: 'Faltan campos obligatorios' }, { status: 400 });
     }
 
     if (isSupabaseConfigured) {
@@ -60,13 +59,12 @@ export async function POST(request: Request) {
         .single();
 
       if (error) throw error;
-      return NextResponse.json({ product: data, source: 'supabase' });
+      return NextResponse.json({ product: data });
     }
 
-    // Fallback mock insert
     const newProduct: Product = {
       id: Date.now().toString(),
-      barcode: barcode || `779999${Math.floor(1000 + Math.random() * 9000)}`,
+      barcode: barcode || '',
       name,
       category: category || 'Varios',
       cost: Number(cost) || 0,
@@ -77,7 +75,7 @@ export async function POST(request: Request) {
     };
 
     localProducts.unshift(newProduct);
-    return NextResponse.json({ product: newProduct, source: 'demo_fallback' });
+    return NextResponse.json({ product: newProduct });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Error creating product' }, { status: 500 });
   }
