@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Product, Expense } from '@/lib/supabase';
-import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus } from 'lucide-react';
+import { Product, Expense, supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { PlusCircle, MinusCircle, Trash2, Calendar, Loader2, CheckCircle2, Wallet, ShoppingBag, PackagePlus, AlertCircle } from 'lucide-react';
 
 export default function CajaPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -10,7 +10,8 @@ export default function CajaPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [activeType, setActiveType] = useState<'ingreso' | 'egreso'>('ingreso');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Venta Rápida (Ingreso)
   const [saleProductId, setSaleProductId] = useState('');
@@ -24,13 +25,21 @@ export default function CajaPage() {
   const [purchaseProductId, setPurchaseProductId] = useState('');
   const [purchaseQty, setPurchaseQty] = useState(1);
 
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setCurrentUser(data.user);
+      });
+    }
+  }, []);
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [expRes, prodRes] = await Promise.all([
-        fetch('/api/expenses'),
-        fetch('/api/inventory'),
-      ]);
+      const urlExp = currentUser?.id ? `/api/expenses?userId=${currentUser.id}` : '/api/expenses';
+      const urlProd = currentUser?.id ? `/api/inventory?userId=${currentUser.id}` : '/api/inventory';
+
+      const [expRes, prodRes] = await Promise.all([fetch(urlExp), fetch(urlProd)]);
       const expData = await expRes.json();
       const prodData = await prodRes.json();
 
@@ -45,35 +54,52 @@ export default function CajaPage() {
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
+  }, [currentUser]);
 
   const handleQuickSaleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const product = products.find((p) => p.id === saleProductId);
     if (!product || submitting) return;
 
+    setToastMessage(null);
+    setSubmitting(true);
+
     const unitPrice = product.sale_price ?? product.price ?? 0;
+    const unitCost = product.cost_price ?? product.cost ?? 0;
 
     try {
-      setSubmitting(true);
+      const payload = {
+        payment_method: paymentMethod,
+        user_id: currentUser?.id || undefined,
+        items: [
+          {
+            product_id: product.id,
+            quantity: Number(saleQty),
+            unit_price: unitPrice,
+            unit_cost: unitCost,
+          },
+        ],
+      };
+
       const res = await fetch('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payment_method: paymentMethod,
-          items: [{ product_id: product.id, quantity: Number(saleQty), unit_price: unitPrice }],
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setSuccessMsg(`¡Venta de ${saleQty}x ${product.name} registrada! Stock descontado automáticamente.`);
-        setSaleProductId('');
-        setSaleQty(1);
-        fetchInitialData();
-        setTimeout(() => setSuccessMsg(''), 3500);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'No se pudo completar la venta.');
       }
-    } catch (err) {
+
+      setToastMessage({ type: 'success', text: `✅ Venta registrada y stock actualizado (-${saleQty} u. en ${product.name})` });
+      setSaleProductId('');
+      setSaleQty(1);
+      await fetchInitialData();
+    } catch (err: any) {
       console.error('Error registrando venta:', err);
+      setToastMessage({ type: 'error', text: `❌ ${err.message || 'Error al procesar la venta'}` });
     } finally {
       setSubmitting(false);
     }
@@ -83,36 +109,45 @@ export default function CajaPage() {
     e.preventDefault();
     if (!expenseDesc || !expenseAmount || submitting) return;
 
+    setToastMessage(null);
+    setSubmitting(true);
+
     try {
-      setSubmitting(true);
+      const payload = {
+        description: expenseDesc.trim(),
+        amount: parseFloat(expenseAmount),
+        category: expenseCategory,
+        product_id: expenseCategory === 'mercaderia' ? purchaseProductId || undefined : undefined,
+        quantity_purchased: expenseCategory === 'mercaderia' ? Number(purchaseQty) : undefined,
+        user_id: currentUser?.id || undefined,
+      };
+
       const res = await fetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: expenseDesc,
-          amount: Number(expenseAmount),
-          category: expenseCategory,
-          product_id: expenseCategory === 'mercaderia' ? purchaseProductId : undefined,
-          quantity_purchased: expenseCategory === 'mercaderia' ? Number(purchaseQty) : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const selectedProd = products.find((p) => p.id === purchaseProductId);
-        const stockMsg = expenseCategory === 'mercaderia' && selectedProd
-          ? ` (+${purchaseQty} unidades sumadas a ${selectedProd.name})`
-          : '';
+      const data = await res.json();
 
-        setSuccessMsg(`¡Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado!${stockMsg}`);
-        setExpenseDesc('');
-        setExpenseAmount('');
-        setPurchaseProductId('');
-        setPurchaseQty(1);
-        fetchInitialData();
-        setTimeout(() => setSuccessMsg(''), 3500);
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'No se pudo guardar el egreso.');
       }
-    } catch (err) {
+
+      const selectedProd = products.find((p) => p.id === purchaseProductId);
+      const stockMsg = expenseCategory === 'mercaderia' && selectedProd && purchaseQty > 0
+        ? ` (+${purchaseQty} u. sumadas a ${selectedProd.name})`
+        : '';
+
+      setToastMessage({ type: 'success', text: `✅ Egreso de $${Number(expenseAmount).toLocaleString('es-AR')} guardado${stockMsg}` });
+      setExpenseDesc('');
+      setExpenseAmount('');
+      setPurchaseProductId('');
+      setPurchaseQty(1);
+      await fetchInitialData();
+    } catch (err: any) {
       console.error('Error registrando egreso:', err);
+      setToastMessage({ type: 'error', text: `❌ ${err.message || 'Error al guardar el egreso'}` });
     } finally {
       setSubmitting(false);
     }
@@ -122,6 +157,7 @@ export default function CajaPage() {
     try {
       setExpenses((prev) => prev.filter((e) => e.id !== id));
       await fetch(`/api/expenses?id=${id}`, { method: 'DELETE' });
+      setToastMessage({ type: 'success', text: '✅ Registro eliminado correctamente' });
     } catch (err) {
       console.error('Error eliminando registro:', err);
     }
@@ -129,6 +165,25 @@ export default function CajaPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-xl animate-pulse ${
+            toastMessage.type === 'success'
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+              : 'bg-rose-500/20 border-rose-500 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {toastMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            <span>{toastMessage.text}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-xs opacity-70 hover:opacity-100">
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
@@ -141,7 +196,10 @@ export default function CajaPage() {
       <div className="grid grid-cols-2 gap-4">
         <button
           type="button"
-          onClick={() => setActiveType('ingreso')}
+          onClick={() => {
+            setToastMessage(null);
+            setActiveType('ingreso');
+          }}
           className={`p-5 rounded-3xl border text-left transition-all flex flex-col justify-between shadow-xl ${
             activeType === 'ingreso'
               ? 'bg-emerald-600/20 border-emerald-500 text-white ring-2 ring-emerald-500/50'
@@ -159,7 +217,10 @@ export default function CajaPage() {
 
         <button
           type="button"
-          onClick={() => setActiveType('egreso')}
+          onClick={() => {
+            setToastMessage(null);
+            setActiveType('egreso');
+          }}
           className={`p-5 rounded-3xl border text-left transition-all flex flex-col justify-between shadow-xl ${
             activeType === 'egreso'
               ? 'bg-rose-600/20 border-rose-500 text-white ring-2 ring-rose-500/50'
@@ -176,14 +237,6 @@ export default function CajaPage() {
         </button>
       </div>
 
-      {/* Success Banner */}
-      {successMsg && (
-        <div className="bg-emerald-500/20 border border-emerald-500 text-emerald-300 p-4 rounded-2xl flex items-center gap-3 font-semibold text-sm animate-pulse">
-          <CheckCircle2 className="w-5 h-5 shrink-0" />
-          {successMsg}
-        </div>
-      )}
-
       {/* INGRESO: VENTA RÁPIDA */}
       {activeType === 'ingreso' && (
         <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5">
@@ -194,7 +247,7 @@ export default function CajaPage() {
           <form onSubmit={handleQuickSaleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                1. Seleccionar Producto
+                1. Seleccionar Producto *
               </label>
               <select
                 required
@@ -205,7 +258,7 @@ export default function CajaPage() {
                 <option value="">-- Selecciona producto vendido --</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} (${(p.sale_price ?? p.price ?? 0).toLocaleString('es-AR')}) - Stock disponible: {p.stock} u.
+                    {p.name} (${(p.sale_price ?? p.price ?? 0).toLocaleString('es-AR')}) - Stock: {p.stock} u.
                   </option>
                 ))}
               </select>
@@ -214,7 +267,7 @@ export default function CajaPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  2. Cantidad Vendida
+                  2. Cantidad Vendida *
                 </label>
                 <input
                   type="number"
@@ -228,7 +281,7 @@ export default function CajaPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  3. Método de Cobro
+                  3. Método de Cobro *
                 </label>
                 <select
                   value={paymentMethod}
@@ -248,7 +301,7 @@ export default function CajaPage() {
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-emerald-600/30 text-lg transition-all flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-              {submitting ? 'PROCESANDO VENTA...' : 'CONFIRMAR VENTA Y DESCONTAR STOCK'}
+              {submitting ? 'Procesando venta...' : 'CONFIRMAR VENTA Y DESCONTAR STOCK'}
             </button>
           </form>
         </div>
@@ -262,10 +315,9 @@ export default function CajaPage() {
           </h2>
 
           <form onSubmit={handleExpenseSubmit} className="space-y-5">
-            {/* Category Select */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                1. Tipo de Egreso
+                1. Tipo de Egreso *
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
@@ -290,7 +342,6 @@ export default function CajaPage() {
               </div>
             </div>
 
-            {/* If Mercadería: Option to attach product and quantity to sum stock */}
             {expenseCategory === 'mercaderia' && (
               <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 space-y-4">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
@@ -326,10 +377,9 @@ export default function CajaPage() {
               </div>
             )}
 
-            {/* Description */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                2. Concepto / Detalle
+                2. Concepto / Detalle *
               </label>
               <input
                 type="text"
@@ -341,13 +391,13 @@ export default function CajaPage() {
               />
             </div>
 
-            {/* Amount */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                3. Monto Total Pagado ($)
+                3. Monto Total Pagado ($) *
               </label>
               <input
                 type="number"
+                step="0.01"
                 placeholder="0.00"
                 required
                 value={expenseAmount}
@@ -358,11 +408,11 @@ export default function CajaPage() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !expenseDesc || !expenseAmount}
               className="w-full bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-extrabold py-4 rounded-2xl shadow-xl shadow-rose-600/30 text-lg transition-all flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-              {submitting ? 'GUARDANDO EGRESO...' : 'GUARDAR EGRESO & REPONER STOCK'}
+              {submitting ? 'Guardando egreso...' : 'GUARDAR EGRESO & REPONER STOCK'}
             </button>
           </form>
         </div>
@@ -371,7 +421,11 @@ export default function CajaPage() {
       {/* History List */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-4">
         <h3 className="font-bold text-white text-xl border-b border-slate-800 pb-3">Historial de Salidas Registradas</h3>
-        {expenses.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-8 text-slate-400">
+            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          </div>
+        ) : expenses.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-sm">No hay egresos registrados aún.</div>
         ) : (
           <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">

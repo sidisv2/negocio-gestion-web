@@ -66,6 +66,9 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage their own products" ON public.products
     FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+CREATE POLICY "Users can update their own products" ON public.products
+    FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
 -- Sales RLS Policies
 CREATE POLICY "Users can manage their own sales" ON public.sales
     FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
