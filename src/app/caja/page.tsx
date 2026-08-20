@@ -82,15 +82,20 @@ export default function CajaPage() {
     }
   }, [expenseCategory, customDescMode]);
 
-  // Autocomplete concept if product is attached to purchase
+  // Autocomplete concept AND Auto-calculate Total Cost for purchase
   useEffect(() => {
     if (expenseCategory === 'mercaderia' && purchaseProductId) {
       const prod = products.find((p) => p.id === purchaseProductId);
       if (prod) {
         setExpenseDesc(`Reposición: ${prod.name}`);
+        const unitCost = prod.cost_price ?? prod.cost ?? 0;
+        if (unitCost > 0 && purchaseQty > 0) {
+          const estimatedCost = (unitCost * purchaseQty).toFixed(2);
+          setExpenseAmount(estimatedCost);
+        }
       }
     }
-  }, [purchaseProductId, expenseCategory, products]);
+  }, [purchaseProductId, purchaseQty, expenseCategory, products]);
 
   const selectedSaleProduct = products.find((p) => p.id === saleProductId);
   const availableStock = selectedSaleProduct?.stock ?? 0;
@@ -255,7 +260,7 @@ export default function CajaPage() {
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
           <Wallet className="w-8 h-8 text-indigo-400" /> Registro Unificado de Caja & Stock
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Carga rápida sin escritura manual (cifras en ARS, $)</p>
+        <p className="text-slate-400 text-sm mt-1">Operación optimizada para teclado numérico móvil (ARS, $)</p>
       </div>
 
       {/* Top Giant Action Selector */}
@@ -348,6 +353,8 @@ export default function CajaPage() {
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   min="1"
                   required
                   value={saleQty}
@@ -401,7 +408,6 @@ export default function CajaPage() {
           </h2>
 
           <form onSubmit={handleExpenseSubmit} className="space-y-5">
-            {/* Step 1: Category */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                 1. Tipo de Egreso *
@@ -429,7 +435,6 @@ export default function CajaPage() {
               </div>
             </div>
 
-            {/* Optional Stock Increment Attachment */}
             {expenseCategory === 'mercaderia' && (
               <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 space-y-4">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
@@ -454,6 +459,8 @@ export default function CajaPage() {
                   <div>
                     <input
                       type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       min="1"
                       placeholder="Cant. comprada"
                       value={purchaseQty}
@@ -465,7 +472,6 @@ export default function CajaPage() {
               </div>
             )}
 
-            {/* Step 2: Touch Concept Chips (Replaces manual typing) */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -509,13 +515,13 @@ export default function CajaPage() {
               )}
             </div>
 
-            {/* Step 3: Amount */}
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                 3. Monto Total Pagado ($ ARS) *
               </label>
               <input
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 placeholder="0.00"
                 required
