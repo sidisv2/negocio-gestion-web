@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Product } from '@/lib/supabase';
-import { Plus, Search, AlertTriangle, CheckCircle2, Loader2, Inbox } from 'lucide-react';
+import { Product, supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { Plus, Search, Loader2, Inbox, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function InventarioPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -11,21 +11,36 @@ export default function InventarioPage() {
   const [categoryFilter, setCategoryFilter] = useState('Todas');
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
+  // Form state
   const [newProduct, setNewProduct] = useState({
     barcode: '',
     name: '',
     category: 'Accesorios',
-    cost_price: 0,
-    sale_price: 0,
-    stock: 0,
-    min_stock: 5,
+    cost_price: '',
+    sale_price: '',
+    stock: '',
+    min_stock: '5',
   });
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setCurrentUser(data.user);
+      });
+    }
+  }, []);
 
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/inventory?category=${categoryFilter}&search=${search}`);
+      const url = currentUser?.id
+        ? `/api/inventory?category=${categoryFilter}&search=${search}&userId=${currentUser.id}`
+        : `/api/inventory?category=${categoryFilter}&search=${search}`;
+
+      const res = await fetch(url);
       const data = await res.json();
       setProducts(data.products || []);
     } catch (err) {
@@ -37,7 +52,7 @@ export default function InventarioPage() {
 
   useEffect(() => {
     fetchInventory();
-  }, [categoryFilter, search]);
+  }, [categoryFilter, search, currentUser]);
 
   const handleStockAdjust = async (product: Product, delta: number) => {
     const newStock = Math.max(0, product.stock + delta);
@@ -48,21 +63,50 @@ export default function InventarioPage() {
     e.preventDefault();
     if (!newProduct.name || !newProduct.sale_price || submitting) return;
 
+    setToastMessage(null);
+    setSubmitting(true);
+
     try {
-      setSubmitting(true);
+      const payload = {
+        barcode: newProduct.barcode || undefined,
+        name: newProduct.name.trim(),
+        category: newProduct.category,
+        cost_price: parseFloat(newProduct.cost_price || '0'),
+        sale_price: parseFloat(newProduct.sale_price || '0'),
+        stock: parseInt(newProduct.stock || '0', 10),
+        min_stock: parseInt(newProduct.min_stock || '5', 10),
+        user_id: currentUser?.id || undefined,
+      };
+
       const res = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setShowAddModal(false);
-        setNewProduct({ barcode: '', name: '', category: 'Accesorios', cost_price: 0, sale_price: 0, stock: 0, min_stock: 5 });
-        fetchInventory();
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'No se pudo crear el producto.');
       }
-    } catch (err) {
+
+      // Success
+      setShowAddModal(false);
+      setToastMessage({ type: 'success', text: '✅ Producto agregado correctamente' });
+      setNewProduct({
+        barcode: '',
+        name: '',
+        category: 'Accesorios',
+        cost_price: '',
+        sale_price: '',
+        stock: '',
+        min_stock: '5',
+      });
+
+      await fetchInventory();
+    } catch (err: any) {
       console.error('Error creando producto:', err);
+      setToastMessage({ type: 'error', text: `❌ ${err.message || 'Error al guardar producto'}` });
     } finally {
       setSubmitting(false);
     }
@@ -70,6 +114,25 @@ export default function InventarioPage() {
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between text-sm font-bold shadow-xl animate-pulse ${
+            toastMessage.type === 'success'
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+              : 'bg-rose-500/20 border-rose-500 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {toastMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            <span>{toastMessage.text}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-xs opacity-70 hover:opacity-100">
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
@@ -78,7 +141,10 @@ export default function InventarioPage() {
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            setToastMessage(null);
+            setShowAddModal(true);
+          }}
           className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3.5 rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all self-start sm:self-auto text-sm"
         >
           <Plus className="w-5 h-5" /> Agregar Tu Primer Producto
@@ -126,7 +192,10 @@ export default function InventarioPage() {
               Carga tus productos con costo y precio para que el sistema calcule tus ganancias automáticamente.
             </p>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setToastMessage(null);
+                setShowAddModal(true);
+              }}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3 rounded-2xl shadow-lg shadow-indigo-600/30 text-xs inline-flex items-center gap-2 mt-2"
             >
               <Plus className="w-4 h-4" /> Cargar Producto
@@ -156,8 +225,8 @@ export default function InventarioPage() {
                           {p.category}
                         </span>
                       </td>
-                      <td className="py-4 px-5 text-slate-400">${(p.cost_price || p.cost || 0).toLocaleString('es-AR')}</td>
-                      <td className="py-4 px-5 font-bold text-emerald-400">${(p.sale_price || p.price || 0).toLocaleString('es-AR')}</td>
+                      <td className="py-4 px-5 text-slate-400">${(p.cost_price ?? p.cost ?? 0).toLocaleString('es-AR')}</td>
+                      <td className="py-4 px-5 font-bold text-emerald-400">${(p.sale_price ?? p.price ?? 0).toLocaleString('es-AR')}</td>
                       <td className="py-4 px-5 text-center font-bold text-white">
                         <span className={isLowStock ? 'text-rose-400 font-extrabold' : 'text-white'}>
                           {p.stock} u.
@@ -191,12 +260,13 @@ export default function InventarioPage() {
 
       {/* Add Product Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5">
             <h2 className="text-xl font-bold text-white">Cargar Nuevo Producto</h2>
+
             <form onSubmit={handleAddProductSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nombre del Producto</label>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nombre del Producto *</label>
                 <input
                   type="text"
                   required
@@ -220,7 +290,7 @@ export default function InventarioPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Categoría</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Categoría *</label>
                   <select
                     value={newProduct.category}
                     onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value as any })}
@@ -229,6 +299,7 @@ export default function InventarioPage() {
                     <option value="Accesorios">Accesorios</option>
                     <option value="Librería">Librería</option>
                     <option value="Golosinas">Golosinas</option>
+                    <option value="Varios">Varios</option>
                   </select>
                 </div>
               </div>
@@ -238,19 +309,23 @@ export default function InventarioPage() {
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Costo ($)</label>
                   <input
                     type="number"
+                    step="0.01"
+                    placeholder="0"
                     value={newProduct.cost_price}
-                    onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) })}
+                    onChange={(e) => setNewProduct({ ...newProduct, cost_price: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Precio Venta ($)</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Precio Venta ($) *</label>
                   <input
                     type="number"
+                    step="0.01"
                     required
+                    placeholder="0"
                     value={newProduct.sale_price}
-                    onChange={(e) => setNewProduct({ ...newProduct, sale_price: Number(e.target.value) })}
+                    onChange={(e) => setNewProduct({ ...newProduct, sale_price: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -259,8 +334,9 @@ export default function InventarioPage() {
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Stock Inicial</label>
                   <input
                     type="number"
+                    placeholder="0"
                     value={newProduct.stock}
-                    onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })}
+                    onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -270,14 +346,15 @@ export default function InventarioPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl"
+                  disabled={submitting}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+                  disabled={submitting || !newProduct.name || !newProduct.sale_price}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {submitting ? 'Guardando...' : 'Guardar Producto'}
